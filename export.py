@@ -1,5 +1,6 @@
 import torch
 from models import Wav2Lip
+from models import SyncNet_color as SyncNet
 
 def torch2Onnx(model, f="test.onnx", dynamic=False, simplify=False):
     """
@@ -8,7 +9,7 @@ def torch2Onnx(model, f="test.onnx", dynamic=False, simplify=False):
     # 输入placeholder
     dtype = torch.float32 
     device = torch.device('cpu')  
-    image = torch.randn(1, 6, 96, 96, dtype=dtype, device=device)
+    image = torch.randn(1, 15, 48, 96, dtype=dtype, device=device)
     audio = torch.randn(1, 1, 80, 16, dtype=dtype, device=device)
     dummy_output = model(audio, image)
     inputs = (audio, image)
@@ -58,5 +59,8 @@ def load_model(path):
     return model
 
 if __name__ == "__main__":
-    model = load_model("checkpoints/wav2lip.pth")
-    torch2Onnx(model)
+    # model = load_model("checkpoints/wav2lip.pth")
+    model = SyncNet()
+    model.eval()
+    torch.save(model, "syncnet.pt")
+    # torch2Onnx(model)
