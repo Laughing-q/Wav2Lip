@@ -10,7 +10,7 @@ class SyncNet_color(nn.Module):
         self.face_encoder = nn.Sequential(
             Conv2d(15, 32, kernel_size=(7, 7), stride=1, padding=3),
 
-            Conv2d(32, 64, kernel_size=5, stride=(1, 2), padding=1),
+            Conv2d(32, 64, kernel_size=3, stride=(1, 2), padding=1),
             Conv2d(64, 64, kernel_size=3, stride=1, padding=1, residual=True),
             Conv2d(64, 64, kernel_size=3, stride=1, padding=1, residual=True),
 
