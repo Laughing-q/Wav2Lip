@@ -19,3 +19,5 @@ evaluation/test_filelists/lr*.txt
 
 *.onnx
 *.engine
+
+runs/

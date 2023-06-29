@@ -9,28 +9,19 @@ import audio
 import torch
 from torch import nn
 from torch import optim
-from torch.utils import data as data_utils
+from torch.utils.data import DataLoader
 import numpy as np
 
 from glob import glob
 
-import os, random, cv2, argparse
+import os
+import random
+import cv2
 from hparams import hparams
 
-parser = argparse.ArgumentParser(description="Code to train the expert lip-sync discriminator")
+import warnings
 
-parser.add_argument(
-    "--data_root", help="Root folder of the preprocessed LRS2 dataset", required=True
-)
-
-parser.add_argument(
-    "--checkpoint_dir", help="Save checkpoints to this directory", required=True, type=str
-)
-parser.add_argument(
-    "--checkpoint_path", help="Resumed from this checkpoint", default=None, type=str
-)
-
-args = parser.parse_args()
+warnings.filterwarnings("ignore")
 
 
 global_step = 0
@@ -50,12 +41,12 @@ class SyncDataset(Dataset):
         └── images
             └── id
                 └── *.jpg
-        └── audio
+        └── audios
             └── id.wav/aac
     """
 
-    def __init__(self, root):
-        self.audio_files = glob(osp.join(root, "audio", "*"))
+    def __init__(self, audio_dir):
+        self.audio_files = glob(osp.join(audio_dir, "*"))
 
     def get_frame_id(self, im_file):
         return int(Path(im_file).with_suffix("").name)
@@ -71,11 +62,11 @@ class SyncDataset(Dataset):
 
     def __getitem__(self, idx):
         audio_file = self.audio_files[idx]
-        im_dir = str(Path(audio_file.replace("audio", "images")).with_suffix(""))
+        im_dir = str(Path(audio_file.replace("audios", "images")).with_suffix(""))
 
         im_files = glob(osp.join(im_dir, "*"))
         if len(im_files) <= 3 * window_size:
-            return
+            return None, None, None
         pos_idx, neg_idx = random.choices(range(len(im_files))[:-window_size], k=2)
         while neg_idx == pos_idx:
             pos_idx, neg_idx = random.choices(im_files, k=2)
@@ -139,6 +130,8 @@ def train(
         running_loss = 0.0
         prog_bar = tqdm(enumerate(train_data_loader))
         for step, (x, mel, y) in prog_bar:
+            if x is None:
+                continue
             model.train()
             optimizer.zero_grad()
 
@@ -155,15 +148,14 @@ def train(
             optimizer.step()
 
             global_step += 1
-            cur_session_steps = global_step - resumed_step
             running_loss += loss.item()
 
             if global_step == 1 or global_step % checkpoint_interval == 0:
                 save_checkpoint(model, optimizer, global_step, checkpoint_dir, global_epoch)
 
-            if global_step % hparams.syncnet_eval_interval == 0:
-                with torch.no_grad():
-                    eval_model(test_data_loader, global_step, device, model, checkpoint_dir)
+            # if global_step % hparams.syncnet_eval_interval == 0:
+            #     with torch.no_grad():
+            #         eval_model(test_data_loader, global_step, device, model, checkpoint_dir)
 
             prog_bar.set_description("Loss: {}".format(running_loss / (step + 1)))
 
@@ -199,7 +191,7 @@ def eval_model(test_data_loader, global_step, device, model, checkpoint_dir):
 
 
 def save_checkpoint(model, optimizer, step, checkpoint_dir, epoch):
-    checkpoint_path = join(checkpoint_dir, "checkpoint_step{:09d}.pth".format(global_step))
+    checkpoint_path = osp.join(checkpoint_dir, "checkpoint_step{:09d}.pth".format(global_step))
     optimizer_state = optimizer.state_dict() if hparams.save_optimizer_state else None
     torch.save(
         {
@@ -240,26 +232,30 @@ def load_checkpoint(path, model, optimizer, reset_optimizer=False):
 
 
 if __name__ == "__main__":
-    checkpoint_dir = args.checkpoint_dir
-    checkpoint_path = args.checkpoint_path
+    checkpoint_dir = "runs/"
+    checkpoint_path = None
 
     if not os.path.exists(checkpoint_dir):
         os.mkdir(checkpoint_dir)
 
     # Dataset and Dataloader setup
-    train_dataset = Dataset("train")
-    test_dataset = Dataset("val")
+    train_dataset = SyncDataset("/d/dataset/audio/HDTF_DATA/RD25_audios")
+    for i, (x, mel, y) in enumerate(train_dataset):
+        print(i, x.shape, mel.shape, y)
+    # test_dataset = SyncDataset("val")
+    exit()
 
-    train_data_loader = data_utils.DataLoader(
+    train_data_loader = DataLoader(
         train_dataset,
         batch_size=hparams.syncnet_batch_size,
         shuffle=True,
-        num_workers=hparams.num_workers,
+        num_workers=8,
     )
 
-    test_data_loader = data_utils.DataLoader(
-        test_dataset, batch_size=hparams.syncnet_batch_size, num_workers=8
-    )
+    # test_data_loader = DataLoader(
+    #     test_dataset, batch_size=hparams.syncnet_batch_size, num_workers=8
+    # )
+    test_data_loader = None
 
     device = torch.device("cuda" if use_cuda else "cpu")
 
