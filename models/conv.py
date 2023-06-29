@@ -9,7 +9,7 @@ class Conv2d(nn.Module):
         self.conv_block = nn.Sequential(
             nn.Conv2d(cin, cout, kernel_size, stride, padding), nn.BatchNorm2d(cout)
         )
-        self.act = nn.ReLU()
+        self.act = nn.SiLU()
         self.residual = residual
 
     def forward(self, x):
