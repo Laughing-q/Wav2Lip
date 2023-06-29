@@ -1,5 +1,7 @@
-from os.path import dirname, join, basename, isfile
+import os.path as osp
+from pathlib import Path
 from tqdm import tqdm
+from torch.utils.data import Dataset
 
 from models import SyncNet_color as SyncNet
 import audio
@@ -7,14 +9,13 @@ import audio
 import torch
 from torch import nn
 from torch import optim
-import torch.backends.cudnn as cudnn
 from torch.utils import data as data_utils
 import numpy as np
 
 from glob import glob
 
 import os, random, cv2, argparse
-from hparams import hparams, get_image_list
+from hparams import hparams
 
 parser = argparse.ArgumentParser(description="Code to train the expert lip-sync discriminator")
 
@@ -37,105 +38,78 @@ global_epoch = 0
 use_cuda = torch.cuda.is_available()
 print("use_cuda: {}".format(use_cuda))
 
-syncnet_T = 5
+window_size = 5
 syncnet_mel_step_size = 16
 
 
-class Dataset(object):
-    def __init__(self, split):
-        self.all_videos = get_image_list(args.data_root, split)
+class SyncDataset(Dataset):
+    """SyncDataset
 
-    def get_frame_id(self, frame):
-        return int(basename(frame).split(".")[0])
+    Attributes:
+        root
+        └── images
+            └── id
+                └── *.jpg
+        └── audio
+            └── id.wav/aac
+    """
 
-    def get_window(self, start_frame):
-        start_id = self.get_frame_id(start_frame)
-        vidname = dirname(start_frame)
+    def __init__(self, root):
+        self.audio_files = glob(osp.join(root, "audio", "*"))
 
-        window_fnames = []
-        for frame_id in range(start_id, start_id + syncnet_T):
-            frame = join(vidname, "{}.jpg".format(frame_id))
-            if not isfile(frame):
-                return None
-            window_fnames.append(frame)
-        return window_fnames
+    def get_frame_id(self, im_file):
+        return int(Path(im_file).with_suffix("").name)
 
-    def crop_audio_window(self, spec, start_frame):
-        # num_frames = (T x hop_size * fps) / sample_rate
-        start_frame_num = self.get_frame_id(start_frame)
+    def crop_audio_window(self, spec, im_file):
+        start_frame_num = self.get_frame_id(im_file)
         start_idx = int(80.0 * (start_frame_num / float(hparams.fps)))
-
         end_idx = start_idx + syncnet_mel_step_size
-
         return spec[start_idx:end_idx, :]
 
     def __len__(self):
-        return len(self.all_videos)
+        return len(self.audio_files)
 
     def __getitem__(self, idx):
-        while 1:
-            idx = random.randint(0, len(self.all_videos) - 1)
-            vidname = self.all_videos[idx]
+        audio_file = self.audio_files[idx]
+        im_dir = str(Path(audio_file.replace("audio", "images")).with_suffix(""))
 
-            img_names = list(glob(join(vidname, "*.jpg")))
-            if len(img_names) <= 3 * syncnet_T:
-                continue
-            img_name = random.choice(img_names)
-            wrong_img_name = random.choice(img_names)
-            while wrong_img_name == img_name:
-                wrong_img_name = random.choice(img_names)
+        im_files = glob(osp.join(im_dir, "*"))
+        if len(im_files) <= 3 * window_size:
+            return
+        pos_idx, neg_idx = random.choices(range(len(im_files))[:-window_size], k=2)
+        while neg_idx == pos_idx:
+            pos_idx, neg_idx = random.choices(im_files, k=2)
 
-            if random.choice([True, False]):
-                y = torch.ones(1).float()
-                chosen = img_name
-            else:
-                y = torch.zeros(1).float()
-                chosen = wrong_img_name
+        if random.random() < 0.5:
+            y = torch.ones(1, dtype=torch.float32)
+            chosen = pos_idx
+        else:
+            y = torch.zeros(1, dtype=torch.float32)
+            chosen = neg_idx
 
-            window_fnames = self.get_window(chosen)
-            if window_fnames is None:
-                continue
+        window_files = im_files[chosen : chosen + window_size]
 
-            window = []
-            all_read = True
-            for fname in window_fnames:
-                img = cv2.imread(fname)
-                if img is None:
-                    all_read = False
-                    break
-                try:
-                    img = cv2.resize(img, (hparams.img_size, hparams.img_size))
-                except Exception as e:
-                    all_read = False
-                    break
+        window = []
+        for fname in window_files:
+            im = cv2.imread(fname)
+            im = cv2.resize(im, (hparams.img_size, hparams.img_size))
+            window.append(im)
 
-                window.append(img)
+        wav = audio.load_wav(audio_file, hparams.sample_rate)
 
-            if not all_read:
-                continue
+        orig_mel = audio.melspectrogram(wav).T
 
-            try:
-                wavpath = join(vidname, "audio.wav")
-                wav = audio.load_wav(wavpath, hparams.sample_rate)
+        mel = self.crop_audio_window(orig_mel.copy(), im_files[pos_idx])
 
-                orig_mel = audio.melspectrogram(wav).T
-            except Exception as e:
-                continue
+        # H x W x 3 * T
+        x = np.concatenate(window, axis=2) / 255.0
+        x = x.transpose(2, 0, 1)  # 3 * T, H, W
+        x = x[:, x.shape[1] // 2 :]  # 3 * T, H // 2, W
 
-            mel = self.crop_audio_window(orig_mel.copy(), img_name)
+        x = torch.from_numpy(x)
+        mel = torch.from_numpy(mel.T).unsqueeze(0)
 
-            if mel.shape[0] != syncnet_mel_step_size:
-                continue
-
-            # H x W x 3 * T
-            x = np.concatenate(window, axis=2) / 255.0
-            x = x.transpose(2, 0, 1)
-            x = x[:, x.shape[1] // 2 :]
-
-            x = torch.FloatTensor(x)
-            mel = torch.FloatTensor(mel.T).unsqueeze(0)
-
-            return x, mel, y
+        return x, mel, y
 
 
 logloss = nn.BCELoss()
