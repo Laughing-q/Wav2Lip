@@ -9,7 +9,7 @@ def torch2Onnx(model, f="test.onnx", dynamic=False, simplify=False):
     # 输入placeholder
     dtype = torch.float32 
     device = torch.device('cpu')  
-    image = torch.randn(1, 15, 48, 96, dtype=dtype, device=device)
+    image = torch.randn(1, 6, 256, 256, dtype=dtype, device=device)
     audio = torch.randn(1, 1, 80, 16, dtype=dtype, device=device)
     dummy_output = model(audio, image)
     inputs = (audio, image)
@@ -60,7 +60,7 @@ def load_model(path):
 
 if __name__ == "__main__":
     # model = load_model("checkpoints/wav2lip.pth")
-    model = SyncNet()
+    # model = SyncNet()
+    model = Wav2Lip()
     model.eval()
-    torch.save(model, "syncnet.pt")
-    # torch2Onnx(model)
+    torch2Onnx(model)
