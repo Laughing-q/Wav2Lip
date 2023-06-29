@@ -93,7 +93,7 @@ class SyncDataset(Dataset):
         mel = self.crop_audio_window(orig_mel.copy(), im_files[pos_idx])
 
         # H x W x 3 * T
-        x = np.concatenate(window, axis=2) / 255.0
+        x = np.concatenate(window, axis=2)
         x = x.transpose(2, 0, 1)  # 3 * T, H, W
         x = x[:, x.shape[1] // 2 :]  # 3 * T, H // 2, W
 
@@ -238,10 +238,23 @@ if __name__ == "__main__":
     if not os.path.exists(checkpoint_dir):
         os.mkdir(checkpoint_dir)
 
+    device = torch.device("cuda" if use_cuda else "cpu")
+    # Model
+    model = SyncNet().to(device)
+    model.eval()
+    print(
+        "total trainable params {}".format(
+            sum(p.numel() for p in model.parameters() if p.requires_grad)
+        )
+    )
     # Dataset and Dataloader setup
     train_dataset = SyncDataset("/d/dataset/audio/HDTF_DATA/RD25_audios")
-    for i, (x, mel, y) in enumerate(train_dataset):
-        print(i, x.shape, mel.shape, y)
+    for i, (im, mel, y) in enumerate(train_dataset):
+        # print(i, x.shape, mel.shape, y)
+        im = im.to(device).float() / 255.
+        mel = mel.to(device).float()
+        a, v = model(mel[None], im[None])
+        print(a.shape, v.shape)
     # test_dataset = SyncDataset("val")
     exit()
 
