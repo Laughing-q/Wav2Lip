@@ -107,7 +107,8 @@ logloss = nn.BCELoss()
 
 
 def cosine_loss(a, v, y):
-    d = nn.functional.cosine_similarity(a, v)
+    d = nn.functional.cosine_similarity(a, v).clamp_(0, 1)
+    # d = (a * v).sum(-1)
     loss = logloss(d.unsqueeze(1), y)
 
     return loss
@@ -116,39 +117,36 @@ def cosine_loss(a, v, y):
 def train(
     device,
     model,
-    train_data_loader,
-    test_data_loader,
+    train_loader,
+    val_loader,
     optimizer,
     checkpoint_dir=None,
     checkpoint_interval=None,
     nepochs=None,
 ):
     global global_step, global_epoch
-    resumed_step = global_step
 
     while global_epoch < nepochs:
         running_loss = 0.0
-        prog_bar = tqdm(enumerate(train_data_loader))
-        for step, (x, mel, y) in prog_bar:
-            if x is None:
+        prog_bar = tqdm(enumerate(train_loader), total=len(train_loader))
+        for step, (im, mel, y) in prog_bar:
+            if im is None:
                 continue
             model.train()
             optimizer.zero_grad()
 
             # Transform data to CUDA device
-            x = x.to(device)
-
-            mel = mel.to(device)
-
-            a, v = model(mel, x)
+            im = im.to(device).float() / 255.
+            mel = mel.to(device).float()
             y = y.to(device)
 
+            a, v = model(mel, im)
             loss = cosine_loss(a, v, y)
             loss.backward()
             optimizer.step()
 
             global_step += 1
-            running_loss += loss.item()
+            running_loss += loss.detach().cpu().item()
 
             if global_step == 1 or global_step % checkpoint_interval == 0:
                 save_checkpoint(model, optimizer, global_step, checkpoint_dir, global_epoch)
@@ -167,15 +165,14 @@ def eval_model(test_data_loader, global_step, device, model, checkpoint_dir):
     print("Evaluating for {} steps".format(eval_steps))
     losses = []
     while 1:
-        for step, (x, mel, y) in enumerate(test_data_loader):
+        for step, (im, mel, y) in enumerate(test_data_loader):
             model.eval()
 
             # Transform data to CUDA device
-            x = x.to(device)
+            im = im.to(device).float() / 255.
+            mel = mel.to(device).float()
 
-            mel = mel.to(device)
-
-            a, v = model(mel, x)
+            a, v = model(mel, im)
             y = y.to(device)
 
             loss = cosine_loss(a, v, y)
@@ -241,7 +238,6 @@ if __name__ == "__main__":
     device = torch.device("cuda" if use_cuda else "cpu")
     # Model
     model = SyncNet().to(device)
-    model.eval()
     print(
         "total trainable params {}".format(
             sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -249,36 +245,28 @@ if __name__ == "__main__":
     )
     # Dataset and Dataloader setup
     train_dataset = SyncDataset("/d/dataset/audio/HDTF_DATA/RD25_audios")
-    for i, (im, mel, y) in enumerate(train_dataset):
-        # print(i, x.shape, mel.shape, y)
-        im = im.to(device).float() / 255.
-        mel = mel.to(device).float()
-        a, v = model(mel[None], im[None])
-        print(a.shape, v.shape)
-    # test_dataset = SyncDataset("val")
-    exit()
+    # for i, (im, mel, y) in enumerate(train_dataset):
+    #     # print(i, x.shape, mel.shape, y)
+    #     im = im.to(device).float() / 255.
+    #     mel = mel.to(device).float()
+    #     a, v = model(mel[None], im[None])
+    #     print(a.shape, v.shape)
 
-    train_data_loader = DataLoader(
+    # val_dataset = SyncDataset("val")
+
+    train_loader = DataLoader(
         train_dataset,
         batch_size=hparams.syncnet_batch_size,
         shuffle=True,
         num_workers=8,
     )
 
-    # test_data_loader = DataLoader(
-    #     test_dataset, batch_size=hparams.syncnet_batch_size, num_workers=8
+    # val_loader = DataLoader(
+    #     val_dataset, batch_size=hparams.syncnet_batch_size, num_workers=8
     # )
-    test_data_loader = None
+    val_loader = None
 
     device = torch.device("cuda" if use_cuda else "cpu")
-
-    # Model
-    model = SyncNet().to(device)
-    print(
-        "total trainable params {}".format(
-            sum(p.numel() for p in model.parameters() if p.requires_grad)
-        )
-    )
 
     optimizer = optim.Adam(
         [p for p in model.parameters() if p.requires_grad], lr=hparams.syncnet_lr
@@ -290,8 +278,8 @@ if __name__ == "__main__":
     train(
         device,
         model,
-        train_data_loader,
-        test_data_loader,
+        train_loader,
+        val_loader,
         optimizer,
         checkpoint_dir=checkpoint_dir,
         checkpoint_interval=hparams.syncnet_checkpoint_interval,
