@@ -107,7 +107,7 @@ class SyncDataset(Dataset):
 
         neg_sample = idx % 2
         mel_patch = self.crop_audio_window(mel.copy(), frame_id, neg_sample=neg_sample)
-        y = torch.ones(0 if neg_sample else 1, dtype=torch.float32)
+        y = torch.tensor([0] if neg_sample else [1], dtype=torch.float32)
 
         # H x W x 3 * T
         x = np.concatenate(window, axis=2)
