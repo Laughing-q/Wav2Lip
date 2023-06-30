@@ -69,7 +69,7 @@ class SyncDataset(Dataset):
             return None, None, None
         pos_idx, neg_idx = random.choices(range(len(im_files))[:-window_size], k=2)
         while neg_idx == pos_idx:
-            pos_idx, neg_idx = random.choices(im_files, k=2)
+            pos_idx, neg_idx = random.choices(range(len(im_files))[:-window_size], k=2)
 
         if random.random() < 0.5:
             y = torch.ones(1, dtype=torch.float32)
