@@ -29,6 +29,7 @@ global_epoch = 0
 use_cuda = torch.cuda.is_available()
 print("use_cuda: {}".format(use_cuda))
 
+# NOTE: video fps is 25 and audio fps is 80, so 5 frames for video corresponding to 16 frames for audio
 window_size = 5
 syncnet_mel_step_size = 16
 
@@ -45,40 +46,58 @@ class SyncDataset(Dataset):
             └── id.wav/aac
     """
 
-    def __init__(self, audio_dir):
-        self.audio_files = glob(osp.join(audio_dir, "*"))
+    def __init__(self, im_dir, audio_dir):
+        print("Loading image files...")
+        self.im_files = glob(osp.join(im_dir, "*", "*"))
+        print(f"Loaded {len(self.im_files)} image files...")
+        # NOTE: check the numbers of each id, should be more than `window_size * 2`
+        print("Checking image files...")
+        for im_file in self.im_files:
+            assert self.get_frame_id(im_file) > 2 * window_size
+        print("Loading audios...")
+        audios = {}
+        audio_files = glob(osp.join(audio_dir, "*"))
+        for af in tqdm(audio_files, total=len(audio_files)):
+            # mel = self.get_mel(af)
+            # audios[Path(af).with_suffix("").name] = mel
+            # np.save(af.replace(".aac", ".npy"), mel)
+            audios[Path(af).with_suffix("").name] = np.load(af)
+        self.audios = audios
 
     def get_frame_id(self, im_file):
         return int(Path(im_file).with_suffix("").name)
 
-    def crop_audio_window(self, spec, im_file):
-        start_frame_num = self.get_frame_id(im_file)
-        start_idx = int(80.0 * (start_frame_num / float(hparams.fps)))
+    def get_mel(self, audio_file):
+        wav = audio.load_wav(audio_file, hparams.sample_rate)
+        mel = audio.melspectrogram(wav).T
+        return mel
+
+    def crop_audio_window(self, mel, frame_id, neg_sample=False):
+        start_idx = int(80.0 * (frame_id / float(hparams.fps)))
+        if neg_sample:
+            idx = random.randint(0, len(mel) - syncnet_mel_step_size)
+            while start_idx == idx:
+                idx = random.randint(0, len(mel) - syncnet_mel_step_size)
+            start_idx = idx
         end_idx = start_idx + syncnet_mel_step_size
-        return spec[start_idx:end_idx, :]
+        return mel[start_idx:end_idx, :]
+
+    def generate_window(self, p):
+        frame_id = int(p.with_suffix("").name)
+        end_id = frame_id + window_size
+        end_exist = (p.parent / f"{end_id}.jpg").exists()
+        iterator = range(frame_id, end_id) if end_exist else range(frame_id - window_size, frame_id)
+        frame_id = frame_id if end_exist else (frame_id - window_size)
+        return [str(p.parent / f"{i}.jpg") for i in iterator], frame_id
 
     def __len__(self):
-        return len(self.audio_files)
+        return len(self.im_files)
 
     def __getitem__(self, idx):
-        audio_file = self.audio_files[idx]
-        im_dir = str(Path(audio_file.replace("audios", "images")).with_suffix(""))
-
-        im_files = glob(osp.join(im_dir, "*"))
-        if len(im_files) <= 3 * window_size:
-            return None, None, None
-        pos_idx, neg_idx = random.choices(range(len(im_files))[:-window_size], k=2)
-        while neg_idx == pos_idx:
-            pos_idx, neg_idx = random.choices(range(len(im_files))[:-window_size], k=2)
-
-        if random.random() < 0.5:
-            y = torch.ones(1, dtype=torch.float32)
-            chosen = pos_idx
-        else:
-            y = torch.zeros(1, dtype=torch.float32)
-            chosen = neg_idx
-
-        window_files = im_files[chosen : chosen + window_size]
+        im_file = self.im_files[idx]
+        p = Path(im_file)
+        mel = self.audios[p.parent.name]
+        window_files, frame_id = self.generate_window(p)
 
         window = []
         for fname in window_files:
@@ -86,11 +105,9 @@ class SyncDataset(Dataset):
             im = cv2.resize(im, (hparams.img_size, hparams.img_size))
             window.append(im)
 
-        wav = audio.load_wav(audio_file, hparams.sample_rate)
-
-        orig_mel = audio.melspectrogram(wav).T
-
-        mel = self.crop_audio_window(orig_mel.copy(), im_files[pos_idx])
+        neg_sample = idx % 2
+        mel_patch = self.crop_audio_window(mel.copy(), frame_id, neg_sample=neg_sample)
+        y = torch.ones(0 if neg_sample else 1, dtype=torch.float32)
 
         # H x W x 3 * T
         x = np.concatenate(window, axis=2)
@@ -98,9 +115,9 @@ class SyncDataset(Dataset):
         x = x[:, x.shape[1] // 2 :]  # 3 * T, H // 2, W
 
         x = torch.from_numpy(x)
-        mel = torch.from_numpy(mel.T).unsqueeze(0)
+        mel_patch = torch.from_numpy(mel_patch.T).unsqueeze(0)
 
-        return x, mel, y
+        return x, mel_patch, y
 
 
 logloss = nn.BCELoss()
@@ -136,7 +153,7 @@ def train(
             optimizer.zero_grad()
 
             # Transform data to CUDA device
-            im = im.to(device).float() / 255.
+            im = im.to(device).float() / 255.0
             mel = mel.to(device).float()
             y = y.to(device)
 
@@ -169,7 +186,7 @@ def eval_model(test_data_loader, global_step, device, model, checkpoint_dir):
             model.eval()
 
             # Transform data to CUDA device
-            im = im.to(device).float() / 255.
+            im = im.to(device).float() / 255.0
             mel = mel.to(device).float()
 
             a, v = model(mel, im)
@@ -244,13 +261,18 @@ if __name__ == "__main__":
         )
     )
     # Dataset and Dataloader setup
-    train_dataset = SyncDataset("/d/dataset/audio/HDTF_DATA/RD25_audios")
+    train_dataset = SyncDataset(
+        im_dir="/d/dataset/audio/HDTF_DATA/RD25_images",
+        audio_dir="/d/dataset/audio/HDTF_DATA/RD25_audios/npy",
+    )
+    # model.eval()
     # for i, (im, mel, y) in enumerate(train_dataset):
     #     # print(i, x.shape, mel.shape, y)
-    #     im = im.to(device).float() / 255.
+    #     im = im.to(device).float() / 255.0
     #     mel = mel.to(device).float()
     #     a, v = model(mel[None], im[None])
     #     print(a.shape, v.shape)
+    # exit()
 
     # val_dataset = SyncDataset("val")
 
