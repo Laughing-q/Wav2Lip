@@ -86,6 +86,7 @@ class Dataset(object):
     def get_segmented_mels(self, spec, start_frame):
         mels = []
         assert syncnet_T == 5
+        # (1, 2, 3, 4, 5)  -> (-1, 0, 1, 2, 3)
         start_frame_num = self.get_frame_id(start_frame) + 1 # 0-indexing ---> 1-indexing
         if start_frame_num - 2 < 0: return None
         for i in range(start_frame_num, start_frame_num + syncnet_T):
