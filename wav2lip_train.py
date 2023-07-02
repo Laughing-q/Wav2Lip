@@ -387,6 +387,8 @@ def load_checkpoint(path, model, optimizer, reset_optimizer=False, overwrite_glo
 
 if __name__ == "__main__":
     checkpoint_dir = "runs/wav2lip"
+    checkpoint_path = None
+    syncnet_checkpoint_path = ""
 
     # Dataset and Dataloader setup
     train_dataset = Wav2LipDataset(
@@ -416,26 +418,26 @@ if __name__ == "__main__":
             sum(p.numel() for p in model.parameters() if p.requires_grad)
         )
     )
-    model.eval()
-    for i, (im, indiv_mels, mel, gt) in enumerate(train_dataset):
-        # print(i, x.shape, mel.shape, y)
-        im = im.to(device).float() / 255.0
-        gt = gt.to(device).float() / 255.0
-        mel = mel.to(device).float()
-        indiv_mels = indiv_mels.to(device).float()
-        g = model(indiv_mels[None], im[None])
-        print(g.shape)
-    exit()
+    # model.eval()
+    # for i, (im, indiv_mels, mel, gt) in enumerate(train_dataset):
+    #     # print(i, x.shape, mel.shape, y)
+    #     im = im.to(device).float() / 255.0
+    #     gt = gt.to(device).float() / 255.0
+    #     mel = mel.to(device).float()
+    #     indiv_mels = indiv_mels.to(device).float()
+    #     g = model(indiv_mels[None], im[None])
+    #     print(g.shape)
+    # exit()
 
     optimizer = optim.Adam(
         [p for p in model.parameters() if p.requires_grad], lr=hparams.initial_learning_rate
     )
 
-    if args.checkpoint_path is not None:
-        load_checkpoint(args.checkpoint_path, model, optimizer, reset_optimizer=False)
+    if checkpoint_path is not None:
+        load_checkpoint(checkpoint_path, model, optimizer, reset_optimizer=False)
 
     load_checkpoint(
-        args.syncnet_checkpoint_path,
+        syncnet_checkpoint_path,
         syncnet,
         None,
         reset_optimizer=True,
