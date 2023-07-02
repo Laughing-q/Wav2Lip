@@ -169,9 +169,8 @@ class Wav2LipDataset(Dataset):
 
     def prepare_window(self, window):
         # 3 x T x H x W
-        x = np.asarray(window) / 255.0
+        x = np.asarray(window)
         x = np.transpose(x, (3, 0, 1, 2))
-
         return x
 
     def __len__(self):
@@ -252,8 +251,8 @@ def get_sync_loss(mel, g):
 def train(
     device,
     model,
-    train_data_loader,
-    test_data_loader,
+    train_loader,
+    val_loader,
     optimizer,
     checkpoint_dir=None,
     checkpoint_interval=None,
@@ -266,7 +265,7 @@ def train(
     while global_epoch < nepochs:
         print("Starting Epoch: {}".format(global_epoch))
         running_sync_loss, running_l1_loss = 0.0, 0.0
-        prog_bar = tqdm(enumerate(train_data_loader))
+        prog_bar = tqdm(enumerate(train_loader))
         for step, (x, indiv_mels, mel, gt) in prog_bar:
             model.train()
             optimizer.zero_grad()
@@ -308,7 +307,7 @@ def train(
             if global_step == 1 or global_step % hparams.eval_interval == 0:
                 with torch.no_grad():
                     average_sync_loss = eval_model(
-                        test_data_loader, global_step, device, model, checkpoint_dir
+                        val_loader, global_step, device, model, checkpoint_dir
                     )
 
                     if average_sync_loss < 0.75:
@@ -325,13 +324,13 @@ def train(
         global_epoch += 1
 
 
-def eval_model(test_data_loader, global_step, device, model, checkpoint_dir):
+def eval_model(val_loader, global_step, device, model, checkpoint_dir):
     eval_steps = 700
     print("Evaluating for {} steps".format(eval_steps))
     sync_losses, recon_losses = [], []
     step = 0
     while 1:
-        for x, indiv_mels, mel, gt in test_data_loader:
+        for x, indiv_mels, mel, gt in val_loader:
             step += 1
             model.eval()
 
@@ -409,16 +408,23 @@ if __name__ == "__main__":
     checkpoint_dir = args.checkpoint_dir
 
     # Dataset and Dataloader setup
-    train_dataset = Wav2LipDataset("train")
-    test_dataset = Wav2LipDataset("val")
+    train_dataset = Wav2LipDataset(
+        im_dir="/d/dataset/audio/HDTF_DATA/RD25_images",
+        audio_dir="/d/dataset/audio/HDTF_DATA/RD25_audios/npy",
+    )
+    # val_dataset = Wav2LipDataset(
+    #     im_dir="/d/dataset/audio/HDTF_DATA/RD25_images",
+    #     audio_dir="/d/dataset/audio/HDTF_DATA/RD25_audios/npy",
+    # )
 
-    train_data_loader = data_utils.DataLoader(
+    train_loader = data_utils.DataLoader(
         train_dataset, batch_size=hparams.batch_size, shuffle=True, num_workers=hparams.num_workers
     )
 
-    test_data_loader = data_utils.DataLoader(
-        test_dataset, batch_size=hparams.batch_size, num_workers=4
-    )
+    # val_loader = data_utils.DataLoader(
+    #     val_dataset, batch_size=hparams.batch_size, num_workers=4
+    # )
+    val_loader = None
 
     device = torch.device("cuda" if use_cuda else "cpu")
 
@@ -429,6 +435,16 @@ if __name__ == "__main__":
             sum(p.numel() for p in model.parameters() if p.requires_grad)
         )
     )
+    model.eval()
+    for i, (im, indiv_mels, mel, gt) in enumerate(train_dataset):
+        # print(i, x.shape, mel.shape, y)
+        im = im.to(device).float() / 255.0
+        gt = gt.to(device).float() / 255.0
+        mel = mel.to(device).float()
+        indiv_mels = indiv_mels.to(device).float()
+        g = model(indiv_mels, im)
+        print(g.shape)
+    exit()
 
     optimizer = optim.Adam(
         [p for p in model.parameters() if p.requires_grad], lr=hparams.initial_learning_rate
@@ -452,8 +468,8 @@ if __name__ == "__main__":
     train(
         device,
         model,
-        train_data_loader,
-        test_data_loader,
+        train_loader,
+        val_loader,
         optimizer,
         checkpoint_dir=checkpoint_dir,
         checkpoint_interval=hparams.checkpoint_interval,
