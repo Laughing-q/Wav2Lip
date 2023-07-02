@@ -187,13 +187,13 @@ class Wav2LipDataset(Dataset):
         return x, indiv_mels, mel_patch, y
 
 
-def save_sample_images(x, g, gt, global_step, checkpoint_dir):
+def save_sample_images(x, g, gt, epoch, checkpoint_dir):
     x = (x.detach().cpu().numpy().transpose(0, 2, 3, 4, 1) * 255.0).astype(np.uint8)
     g = (g.detach().cpu().numpy().transpose(0, 2, 3, 4, 1) * 255.0).astype(np.uint8)
     gt = (gt.detach().cpu().numpy().transpose(0, 2, 3, 4, 1) * 255.0).astype(np.uint8)
 
     refs, inps = x[..., 3:], x[..., :3]
-    folder = join(checkpoint_dir, "samples_step{:09d}".format(global_step))
+    folder = join(checkpoint_dir, "samples_step{:09d}".format(epoch))
     if not os.path.exists(folder):
         os.mkdir(folder)
     collage = np.concatenate((refs, inps, g, gt), axis=-2)
@@ -270,8 +270,8 @@ def train(
             loss.backward()
             optimizer.step()
 
-            if global_step % checkpoint_interval == 0:
-                save_sample_images(x, g, gt, global_step, checkpoint_dir)
+            # if global_step % checkpoint_interval == 0:
+            #     save_sample_images(x, g, gt, global_step, checkpoint_dir)
 
             global_step += 1
             cur_session_steps = global_step - resumed_step
@@ -282,19 +282,19 @@ def train(
             else:
                 running_sync_loss += 0.0
 
-            if global_step % checkpoint_interval == 0:
-                save_checkpoint(model, optimizer, global_step, checkpoint_dir, global_epoch)
-
-            if global_step % hparams.eval_interval == 0:
-                with torch.no_grad():
-                    average_sync_loss = eval_model(
-                        val_loader, global_step, device, model, checkpoint_dir
-                    )
-
-                    if average_sync_loss < 0.75:
-                        hparams.set_hparam(
-                            "syncnet_wt", 0.01
-                        )  # without image GAN a lesser weight is sufficient
+            # if global_step % checkpoint_interval == 0:
+            #     save_checkpoint(model, optimizer, global_step, checkpoint_dir, global_epoch)
+            #
+            # if global_step % hparams.eval_interval == 0:
+            #     with torch.no_grad():
+            #         average_sync_loss = eval_model(
+            #             val_loader, global_step, device, model, checkpoint_dir
+            #         )
+            #
+            #         if average_sync_loss < 0.75:
+            #             hparams.set_hparam(
+            #                 "syncnet_wt", 0.01
+            #             )  # without image GAN a lesser weight is sufficient
 
             prog_bar.set_description(
                 "L1: {}, Sync Loss: {}".format(
@@ -302,6 +302,17 @@ def train(
                 )
             )
 
+        save_sample_images(x, g, gt, global_epoch, checkpoint_dir)
+        save_checkpoint(model, optimizer, global_step, checkpoint_dir, global_epoch)
+        with torch.no_grad():
+            average_sync_loss = eval_model(
+                val_loader, global_step, device, model, checkpoint_dir
+            )
+
+            if average_sync_loss < 0.75:
+                hparams.set_hparam(
+                    "syncnet_wt", 0.01
+                )  # without image GAN a lesser weight is sufficient
         global_epoch += 1
 
 
@@ -340,7 +351,7 @@ def eval_model(val_loader, global_step, device, model, checkpoint_dir):
 
 def save_checkpoint(model, optimizer, step, checkpoint_dir, epoch):
 
-    checkpoint_path = join(checkpoint_dir, "checkpoint_step{:09d}.pth".format(global_step))
+    checkpoint_path = join(checkpoint_dir, "checkpoint_step{:09d}.pth".format(epoch))
     optimizer_state = optimizer.state_dict() if hparams.save_optimizer_state else None
     torch.save(
         {
