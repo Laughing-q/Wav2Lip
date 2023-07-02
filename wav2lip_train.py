@@ -206,7 +206,7 @@ logloss = nn.BCELoss()
 
 
 def cosine_loss(a, v, y):
-    d = nn.functional.cosine_similarity(a, v)
+    d = nn.functional.cosine_similarity(a, v).clamp_(0, 1)
     loss = logloss(d.unsqueeze(1), y)
 
     return loss
@@ -246,16 +246,16 @@ def train(
     while global_epoch < nepochs:
         print("Starting Epoch: {}".format(global_epoch))
         running_sync_loss, running_l1_loss = 0.0, 0.0
-        prog_bar = tqdm(enumerate(train_loader))
+        prog_bar = tqdm(enumerate(train_loader), total=len(train_loader))
         for step, (x, indiv_mels, mel, gt) in prog_bar:
             model.train()
             optimizer.zero_grad()
 
             # Move data to CUDA device
-            x = x.to(device)
-            mel = mel.to(device)
-            indiv_mels = indiv_mels.to(device)
-            gt = gt.to(device)
+            x = x.to(device).float() / 255.0
+            gt = gt.to(device).float() / 255.0
+            mel = mel.to(device).float()
+            indiv_mels = indiv_mels.to(device).float()
 
             g = model(indiv_mels, x)
 
@@ -282,10 +282,10 @@ def train(
             else:
                 running_sync_loss += 0.0
 
-            if global_step == 1 or global_step % checkpoint_interval == 0:
+            if global_step % checkpoint_interval == 0:
                 save_checkpoint(model, optimizer, global_step, checkpoint_dir, global_epoch)
 
-            if global_step == 1 or global_step % hparams.eval_interval == 0:
+            if global_step % hparams.eval_interval == 0:
                 with torch.no_grad():
                     average_sync_loss = eval_model(
                         val_loader, global_step, device, model, checkpoint_dir
@@ -316,10 +316,10 @@ def eval_model(val_loader, global_step, device, model, checkpoint_dir):
             model.eval()
 
             # Move data to CUDA device
-            x = x.to(device)
-            gt = gt.to(device)
-            indiv_mels = indiv_mels.to(device)
-            mel = mel.to(device)
+            x = x.to(device).float() / 255.0
+            gt = gt.to(device).float() / 255.0
+            mel = mel.to(device).float()
+            indiv_mels = indiv_mels.to(device).float()
 
             g = model(indiv_mels, x)
 
@@ -388,12 +388,12 @@ def load_checkpoint(path, model, optimizer, reset_optimizer=False, overwrite_glo
 if __name__ == "__main__":
     checkpoint_dir = "runs/wav2lip"
     checkpoint_path = None
-    syncnet_checkpoint_path = ""
+    syncnet_checkpoint_path = "./runs/syncnet_first/checkpoint_step000490000.pth"
 
     # Dataset and Dataloader setup
     train_dataset = Wav2LipDataset(
-        im_dir="/d/dataset/audio/HDTF_DATA/RD25_images",
-        audio_dir="/d/dataset/audio/HDTF_DATA/RD25_audios/npy",
+        im_dir="/data/datasets/audio/RD25_images",
+        audio_dir="/data/datasets/audio/RD25_audios/npy",
     )
     # val_dataset = Wav2LipDataset(
     #     im_dir="/d/dataset/audio/HDTF_DATA/RD25_images",
@@ -452,7 +452,7 @@ if __name__ == "__main__":
         device,
         model,
         train_loader,
-        val_loader,
+        train_loader,
         optimizer,
         checkpoint_dir=checkpoint_dir,
         checkpoint_interval=hparams.checkpoint_interval,
