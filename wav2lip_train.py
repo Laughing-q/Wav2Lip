@@ -16,30 +16,10 @@ import numpy as np
 
 from glob import glob
 
-import os, random, cv2, argparse
+import os
+import random
+import cv2
 from hparams import hparams
-
-parser = argparse.ArgumentParser(
-    description="Code to train the Wav2Lip model without the visual quality discriminator"
-)
-
-parser.add_argument(
-    "--data_root", help="Root folder of the preprocessed LRS2 dataset", required=True, type=str
-)
-
-parser.add_argument(
-    "--checkpoint_dir", help="Save checkpoints to this directory", required=True, type=str
-)
-parser.add_argument(
-    "--syncnet_checkpoint_path",
-    help="Load the pre-trained Expert discriminator",
-    required=True,
-    type=str,
-)
-
-parser.add_argument("--checkpoint_path", help="Resume from this checkpoint", default=None, type=str)
-
-args = parser.parse_args()
 
 
 global_step = 0
@@ -174,7 +154,7 @@ class Wav2LipDataset(Dataset):
         return x
 
     def __len__(self):
-        return len(self.all_videos)
+        return len(self.im_files)
 
     def __getitem__(self, idx):
         im_file = self.im_files[idx]
@@ -183,10 +163,11 @@ class Wav2LipDataset(Dataset):
         mel = self.audios[id]
         window, frame_id = self.generate_window(p)
 
-        wrong_frame_id = random.choice(self.im_range[id])
+        wrong_frame_id = random.choice(range(*self.im_range[id]))
         wrong_im_file = p.parent / f"{wrong_frame_id}.jpg"
         while (wrong_frame_id == frame_id) or (not wrong_im_file.exists()):
-            wrong_frame_id = random.choice(self.im_range[id])
+            wrong_frame_id = random.choice(range(*self.im_range[id]))
+            wrong_im_file = p.parent / f"{wrong_frame_id}.jpg"
         wrong_window, wrong_frame_id = self.generate_window(wrong_im_file)
 
         mel_patch = self.crop_audio_window(mel.copy(), frame_id)
@@ -405,7 +386,7 @@ def load_checkpoint(path, model, optimizer, reset_optimizer=False, overwrite_glo
 
 
 if __name__ == "__main__":
-    checkpoint_dir = args.checkpoint_dir
+    checkpoint_dir = "runs/wav2lip"
 
     # Dataset and Dataloader setup
     train_dataset = Wav2LipDataset(
@@ -418,7 +399,7 @@ if __name__ == "__main__":
     # )
 
     train_loader = data_utils.DataLoader(
-        train_dataset, batch_size=hparams.batch_size, shuffle=True, num_workers=hparams.num_workers
+        train_dataset, batch_size=hparams.batch_size, shuffle=True, num_workers=8
     )
 
     # val_loader = data_utils.DataLoader(
@@ -442,7 +423,7 @@ if __name__ == "__main__":
         gt = gt.to(device).float() / 255.0
         mel = mel.to(device).float()
         indiv_mels = indiv_mels.to(device).float()
-        g = model(indiv_mels, im)
+        g = model(indiv_mels[None], im[None])
         print(g.shape)
     exit()
 
