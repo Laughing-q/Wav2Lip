@@ -48,12 +48,18 @@ class SyncDataset(Dataset):
 
     def __init__(self, im_dir, audio_dir):
         print("Loading image files...")
-        self.im_files = glob(osp.join(im_dir, "*", "*"))
-        print(f"Loaded {len(self.im_files)} image files...")
-        # NOTE: check the numbers of each id, should be more than `window_size * 2`
+        id_dirs = glob(osp.join(im_dir, "*"))
+        self.im_files = []
         print("Checking image files...")
-        for im_file in self.im_files:
-            assert self.get_frame_id(im_file) > 2 * window_size
+        for id_dir in id_dirs:
+            frame_files = glob(osp.join(id_dir, "*"))
+            # NOTE: check the numbers of each id, should be more than `window_size * 2`
+            if len(frame_files) < 2 * window_size:
+                print(f"WARNING: The number of frames should be more than {2 * window_size}, \
+                        but got {len(frame_files)} for {id_dir}, ignoring {id_dir}.")
+                continue
+            self.im_files += frame_files
+        print(f"Loaded {len(self.im_files)} image files...")
         print("Loading audios...")
         audios = {}
         audio_files = glob(osp.join(audio_dir, "*"))
@@ -83,12 +89,17 @@ class SyncDataset(Dataset):
         return mel[start_idx:end_idx, :]
 
     def generate_window(self, p):
+        window = []
         frame_id = int(p.with_suffix("").name)
         end_id = frame_id + window_size
         end_exist = (p.parent / f"{end_id}.jpg").exists()
         iterator = range(frame_id, end_id) if end_exist else range(frame_id - window_size, frame_id)
         frame_id = frame_id if end_exist else (frame_id - window_size)
-        return [str(p.parent / f"{i}.jpg") for i in iterator], frame_id
+        for fname in [str(p.parent / f"{i}.jpg") for i in iterator]:
+            im = cv2.imread(fname)
+            im = cv2.resize(im, (hparams.img_size, hparams.img_size))
+            window.append(im)
+        return window, frame_id
 
     def __len__(self):
         return len(self.im_files)
@@ -97,13 +108,7 @@ class SyncDataset(Dataset):
         im_file = self.im_files[idx]
         p = Path(im_file)
         mel = self.audios[p.parent.name]
-        window_files, frame_id = self.generate_window(p)
-
-        window = []
-        for fname in window_files:
-            im = cv2.imread(fname)
-            im = cv2.resize(im, (hparams.img_size, hparams.img_size))
-            window.append(im)
+        window, frame_id = self.generate_window(p)
 
         neg_sample = idx % 2
         mel_patch = self.crop_audio_window(mel.copy(), frame_id, neg_sample=neg_sample)
