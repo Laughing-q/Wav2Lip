@@ -1,6 +1,7 @@
 import os.path as osp
 from pathlib import Path
 from tqdm import tqdm
+from contextlib import contextmanager
 from torch.utils.data import Dataset, DataLoader, distributed
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.distributed as dist
@@ -32,6 +33,17 @@ print("use_cuda: {}".format(use_cuda))
 
 window_size = 5
 syncnet_mel_step_size = 16
+
+
+@contextmanager
+def torch_distributed_zero_first(local_rank: int):
+    """Decorator to make all processes in distributed training wait for each local_master to do something."""
+    initialized = torch.distributed.is_available() and torch.distributed.is_initialized()
+    if initialized and local_rank not in (-1, 0):
+        dist.barrier(device_ids=[local_rank])
+    yield
+    if initialized and local_rank == 0:
+        dist.barrier(device_ids=[0])
 
 
 class Wav2LipDataset(Dataset):
@@ -216,8 +228,8 @@ def cosine_loss(a, v, y):
 
 
 # NOTE: set devices
-device = "0"
-os.environ["CUDA_VISIBLE_DEVICES"] = device  # set environment variable
+# device = "0"
+# os.environ["CUDA_VISIBLE_DEVICES"] = device  # set environment variable
 device = torch.device("cuda:0" if use_cuda else "cpu")
 if LOCAL_RANK != -1:
     assert torch.cuda.device_count() > LOCAL_RANK, "insufficient CUDA devices for DDP command"
@@ -322,7 +334,9 @@ def train(
             save_sample_images(x, g, gt, global_epoch, checkpoint_dir)
             save_checkpoint(model, optimizer, global_step, checkpoint_dir, global_epoch)
             with torch.no_grad():
-                average_sync_loss = eval_model(val_loader, global_step, device, model, checkpoint_dir)
+                average_sync_loss = eval_model(
+                    val_loader, global_step, device, model, checkpoint_dir
+                )
 
                 if average_sync_loss < 0.75:
                     hparams.set_hparam(
@@ -416,14 +430,15 @@ if __name__ == "__main__":
     syncnet_checkpoint_path = "./runs/syncnet_first/checkpoint_step000490000.pth"
 
     # Dataset and Dataloader setup
-    train_dataset = Wav2LipDataset(
-        im_dir="/data/datasets/audio/RD25_images",
-        audio_dir="/data/datasets/audio/RD25_audios/npy",
-    )
+    with torch_distributed_zero_first(RANK):
+        train_dataset = Wav2LipDataset(
+            im_dir="/data/datasets/audio/RD25_images",
+            audio_dir="/data/datasets/audio/RD25_audios/npy",
+        )
 
     sampler = None if RANK == -1 else distributed.DistributedSampler(train_dataset, shuffle=True)
     train_loader = DataLoader(
-        train_dataset, batch_size=hparams.batch_size, shuffle=True, num_workers=8, sampler=sampler
+        train_dataset, batch_size=hparams.batch_size, shuffle=sampler is None, num_workers=8, sampler=sampler
     )
 
     if RANK in (-1, 0):
@@ -431,9 +446,7 @@ if __name__ == "__main__":
         #     im_dir="/d/dataset/audio/HDTF_DATA/RD25_images",
         #     audio_dir="/d/dataset/audio/HDTF_DATA/RD25_audios/npy",
         # )
-        val_loader = DataLoader(
-            train_dataset, batch_size=hparams.batch_size, num_workers=4
-        )
+        val_loader = DataLoader(train_dataset, batch_size=hparams.batch_size, num_workers=4)
 
     # Model
     model = Wav2Lip().to(device)
