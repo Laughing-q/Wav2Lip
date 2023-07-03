@@ -230,16 +230,9 @@ def cosine_loss(a, v, y):
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 if LOCAL_RANK != -1:
     assert torch.cuda.device_count() > LOCAL_RANK, "insufficient CUDA devices for DDP command"
-    assert (
-        hparams.batch_size % WORLD_SIZE == 0
-    ), "--batch-size must be multiple of CUDA device count"
     torch.cuda.set_device(LOCAL_RANK)
     device = torch.device("cuda", LOCAL_RANK)
     dist.init_process_group(backend="nccl" if dist.is_nccl_available() else "gloo")
-
-syncnet = SyncNet().to(device)
-for p in syncnet.parameters():
-    p.requires_grad = False
 
 recon_loss = nn.L1Loss()
 
@@ -405,7 +398,7 @@ def load_checkpoint(path, model, optimizer, reset_optimizer=False, overwrite_glo
     global global_epoch
 
     print("Load checkpoint from: {}".format(path))
-    checkpoint = _load(path)
+    checkpoint = torch.load(path, map_location='cpu')
     s = checkpoint["state_dict"]
     new_s = {}
     for k, v in s.items():
@@ -477,6 +470,10 @@ if __name__ == "__main__":
     if checkpoint_path is not None:
         load_checkpoint(checkpoint_path, model, optimizer, reset_optimizer=False)
 
+    syncnet = SyncNet()
+    for p in syncnet.parameters():
+        p.requires_grad = False
+
     load_checkpoint(
         syncnet_checkpoint_path,
         syncnet,
@@ -484,6 +481,7 @@ if __name__ == "__main__":
         reset_optimizer=True,
         overwrite_global_states=False,
     )
+    syncnet.to(device)
 
     if not os.path.exists(checkpoint_dir):
         os.mkdir(checkpoint_dir)
@@ -496,6 +494,5 @@ if __name__ == "__main__":
         val_loader,
         optimizer,
         checkpoint_dir=checkpoint_dir,
-        checkpoint_interval=hparams.checkpoint_interval,
         nepochs=hparams.nepochs,
     )
