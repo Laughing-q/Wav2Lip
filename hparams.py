@@ -30,7 +30,6 @@ class HParams:
 
 # Default hyperparameters
 hparams = HParams(
-        test=1,
 	num_mels=80,  # Number of mel-spectrogram channels and local conditioning dimensionality
 	#  network
 	rescale=True,  # Whether to rescale audio prior to preprocessing

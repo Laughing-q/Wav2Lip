@@ -334,6 +334,10 @@ def train(
                     hparams.set_hparam(
                         "syncnet_wt", 0.01
                     )  # without image GAN a lesser weight is sufficient
+        # NOTE: scatter `syncnet_wt` to other machines.
+        out_syncnet_wt = [0.0]   # it has to be a list object.
+        dist.scatter_object_list(out_syncnet_wt, [hparams.syncnet_wt for _ in range(WORLD_SIZE)], src=0)
+        hparams.set_hparam("syncnet_wt", out_syncnet_wt[0])
         global_epoch += 1
 
 
@@ -385,14 +389,6 @@ def save_checkpoint(model, optimizer, step, checkpoint_dir, epoch):
     print("Saved checkpoint:", checkpoint_path)
 
 
-def _load(checkpoint_path):
-    if torch.cuda.is_available():
-        checkpoint = torch.load(checkpoint_path)
-    else:
-        checkpoint = torch.load(checkpoint_path, map_location=lambda storage, loc: storage)
-    return checkpoint
-
-
 def load_checkpoint(path, model, optimizer, reset_optimizer=False, overwrite_global_states=True):
     global global_step
     global global_epoch
@@ -440,10 +436,6 @@ if __name__ == "__main__":
         #     audio_dir="/d/dataset/audio/HDTF_DATA/RD25_audios/npy",
         # )
         val_loader = DataLoader(train_dataset, batch_size=hparams.batch_size, num_workers=4)
-        hparams.test = 2
-    out_list = [None]
-    dist.scatter_object_list(out_list, [hparams.test for _ in range(WORLD_SIZE)], src=0)
-    hparams.test = out_list[0]
 
     # Model
     model = Wav2Lip().to(device)
