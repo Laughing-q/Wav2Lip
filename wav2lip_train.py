@@ -1,8 +1,9 @@
-from os.path import dirname, join, basename, isfile
 import os.path as osp
 from pathlib import Path
 from tqdm import tqdm
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader, distributed
+from torch.nn.parallel import DistributedDataParallel as DDP
+import torch.distributed as dist
 
 from models import SyncNet_color as SyncNet
 from models import Wav2Lip as Wav2Lip
@@ -11,7 +12,6 @@ import audio
 import torch
 from torch import nn
 from torch import optim
-from torch.utils import data as data_utils
 import numpy as np
 
 from glob import glob
@@ -21,6 +21,9 @@ import random
 import cv2
 from hparams import hparams
 
+LOCAL_RANK = int(os.getenv("LOCAL_RANK", -1))
+RANK = int(os.getenv("RANK", -1))
+WORLD_SIZE = int(os.getenv("WORLD_SIZE", 1))
 
 global_step = 0
 global_epoch = 0
@@ -193,8 +196,8 @@ def save_sample_images(x, g, gt, epoch, checkpoint_dir):
     gt = (gt.detach().cpu().numpy().transpose(0, 2, 3, 4, 1) * 255.0).astype(np.uint8)
 
     refs, inps = x[..., 3:], x[..., :3]
-    folder = join(checkpoint_dir, "samples_step{:09d}".format(epoch))
-    if not os.path.exists(folder):
+    folder = osp.join(checkpoint_dir, "samples_step{:09d}".format(epoch))
+    if not osp.exists(folder):
         os.mkdir(folder)
     collage = np.concatenate((refs, inps, g, gt), axis=-2)
     for batch_idx, c in enumerate(collage):
@@ -212,7 +215,19 @@ def cosine_loss(a, v, y):
     return loss
 
 
-device = torch.device("cuda" if use_cuda else "cpu")
+# NOTE: set devices
+device = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = device  # set environment variable
+device = torch.device("cuda:0" if use_cuda else "cpu")
+if LOCAL_RANK != -1:
+    assert torch.cuda.device_count() > LOCAL_RANK, "insufficient CUDA devices for DDP command"
+    assert (
+        hparams.batch_size % WORLD_SIZE == 0
+    ), "--batch-size must be multiple of CUDA device count"
+    torch.cuda.set_device(LOCAL_RANK)
+    device = torch.device("cuda", LOCAL_RANK)
+    dist.init_process_group(backend="nccl" if dist.is_nccl_available() else "gloo")
+
 syncnet = SyncNet().to(device)
 for p in syncnet.parameters():
     p.requires_grad = False
@@ -236,10 +251,8 @@ def train(
     val_loader,
     optimizer,
     checkpoint_dir=None,
-    checkpoint_interval=None,
     nepochs=None,
 ):
-
     global global_step, global_epoch
     resumed_step = global_step
 
@@ -265,6 +278,9 @@ def train(
                 sync_loss = 0.0
 
             l1loss = recon_loss(g, gt)
+            if RANK != -1:
+                sync_loss *= WORLD_SIZE
+                l1loss *= WORLD_SIZE
 
             loss = hparams.syncnet_wt * sync_loss + (1 - hparams.syncnet_wt) * l1loss
             loss.backward()
@@ -302,17 +318,16 @@ def train(
                 )
             )
 
-        save_sample_images(x, g, gt, global_epoch, checkpoint_dir)
-        save_checkpoint(model, optimizer, global_step, checkpoint_dir, global_epoch)
-        with torch.no_grad():
-            average_sync_loss = eval_model(
-                val_loader, global_step, device, model, checkpoint_dir
-            )
+        if RANK in (-1, 0):
+            save_sample_images(x, g, gt, global_epoch, checkpoint_dir)
+            save_checkpoint(model, optimizer, global_step, checkpoint_dir, global_epoch)
+            with torch.no_grad():
+                average_sync_loss = eval_model(val_loader, global_step, device, model, checkpoint_dir)
 
-            if average_sync_loss < 0.75:
-                hparams.set_hparam(
-                    "syncnet_wt", 0.01
-                )  # without image GAN a lesser weight is sufficient
+                if average_sync_loss < 0.75:
+                    hparams.set_hparam(
+                        "syncnet_wt", 0.01
+                    )  # without image GAN a lesser weight is sufficient
         global_epoch += 1
 
 
@@ -350,8 +365,7 @@ def eval_model(val_loader, global_step, device, model, checkpoint_dir):
 
 
 def save_checkpoint(model, optimizer, step, checkpoint_dir, epoch):
-
-    checkpoint_path = join(checkpoint_dir, "checkpoint_step{:09d}.pth".format(epoch))
+    checkpoint_path = osp.join(checkpoint_dir, "checkpoint_step{:09d}.pth".format(epoch))
     optimizer_state = optimizer.state_dict() if hparams.save_optimizer_state else None
     torch.save(
         {
@@ -406,21 +420,20 @@ if __name__ == "__main__":
         im_dir="/data/datasets/audio/RD25_images",
         audio_dir="/data/datasets/audio/RD25_audios/npy",
     )
-    # val_dataset = Wav2LipDataset(
-    #     im_dir="/d/dataset/audio/HDTF_DATA/RD25_images",
-    #     audio_dir="/d/dataset/audio/HDTF_DATA/RD25_audios/npy",
-    # )
 
-    train_loader = data_utils.DataLoader(
-        train_dataset, batch_size=hparams.batch_size, shuffle=True, num_workers=8
+    sampler = None if RANK == -1 else distributed.DistributedSampler(train_dataset, shuffle=True)
+    train_loader = DataLoader(
+        train_dataset, batch_size=hparams.batch_size, shuffle=True, num_workers=8, sampler=sampler
     )
 
-    # val_loader = data_utils.DataLoader(
-    #     val_dataset, batch_size=hparams.batch_size, num_workers=4
-    # )
-    val_loader = None
-
-    device = torch.device("cuda" if use_cuda else "cpu")
+    if RANK in (-1, 0):
+        # val_dataset = Wav2LipDataset(
+        #     im_dir="/d/dataset/audio/HDTF_DATA/RD25_images",
+        #     audio_dir="/d/dataset/audio/HDTF_DATA/RD25_audios/npy",
+        # )
+        val_loader = DataLoader(
+            train_dataset, batch_size=hparams.batch_size, num_workers=4
+        )
 
     # Model
     model = Wav2Lip().to(device)
@@ -429,6 +442,8 @@ if __name__ == "__main__":
             sum(p.numel() for p in model.parameters() if p.requires_grad)
         )
     )
+    if WORLD_SIZE > 1:
+        model = DDP(model, device_ids=[RANK])
     # model.eval()
     # for i, (im, indiv_mels, mel, gt) in enumerate(train_dataset):
     #     # print(i, x.shape, mel.shape, y)
@@ -463,7 +478,7 @@ if __name__ == "__main__":
         device,
         model,
         train_loader,
-        train_loader,
+        val_loader,
         optimizer,
         checkpoint_dir=checkpoint_dir,
         checkpoint_interval=hparams.checkpoint_interval,
