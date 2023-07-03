@@ -28,9 +28,6 @@ WORLD_SIZE = int(os.getenv("WORLD_SIZE", 1))
 
 global_step = 0
 global_epoch = 0
-use_cuda = torch.cuda.is_available()
-print("use_cuda: {}".format(use_cuda))
-
 window_size = 5
 syncnet_mel_step_size = 16
 
@@ -230,7 +227,7 @@ def cosine_loss(a, v, y):
 # NOTE: set devices
 # device = "0"
 # os.environ["CUDA_VISIBLE_DEVICES"] = device  # set environment variable
-device = torch.device("cuda:0" if use_cuda else "cpu")
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 if LOCAL_RANK != -1:
     assert torch.cuda.device_count() > LOCAL_RANK, "insufficient CUDA devices for DDP command"
     assert (
@@ -268,8 +265,10 @@ def train(
     global global_step, global_epoch
     resumed_step = global_step
 
+    print(hparams.test)
     while global_epoch < nepochs:
-        print("Starting Epoch: {}".format(global_epoch))
+        if RANK in (-1, 0):
+            print("Starting Epoch: {}".format(global_epoch))
         running_sync_loss, running_l1_loss = 0.0, 0.0
         prog_bar = tqdm(enumerate(train_loader), total=len(train_loader))
         for step, (x, indiv_mels, mel, gt) in prog_bar:
@@ -394,7 +393,7 @@ def save_checkpoint(model, optimizer, step, checkpoint_dir, epoch):
 
 
 def _load(checkpoint_path):
-    if use_cuda:
+    if torch.cuda.is_available():
         checkpoint = torch.load(checkpoint_path)
     else:
         checkpoint = torch.load(checkpoint_path, map_location=lambda storage, loc: storage)
@@ -441,20 +440,23 @@ if __name__ == "__main__":
         train_dataset, batch_size=hparams.batch_size, shuffle=sampler is None, num_workers=8, sampler=sampler
     )
 
+    val_loader = None
     if RANK in (-1, 0):
         # val_dataset = Wav2LipDataset(
         #     im_dir="/d/dataset/audio/HDTF_DATA/RD25_images",
         #     audio_dir="/d/dataset/audio/HDTF_DATA/RD25_audios/npy",
         # )
         val_loader = DataLoader(train_dataset, batch_size=hparams.batch_size, num_workers=4)
+        hparams.test = 2
 
     # Model
     model = Wav2Lip().to(device)
-    print(
-        "total trainable params {}".format(
-            sum(p.numel() for p in model.parameters() if p.requires_grad)
+    if RANK in (0, -1):
+        print(
+            "total trainable params {}".format(
+                sum(p.numel() for p in model.parameters() if p.requires_grad)
+            )
         )
-    )
     if WORLD_SIZE > 1:
         model = DDP(model, device_ids=[RANK])
     # model.eval()
