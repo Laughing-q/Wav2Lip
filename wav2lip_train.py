@@ -258,7 +258,6 @@ def train(
     global global_step, global_epoch
     resumed_step = global_step
 
-    print(hparams.test)
     while global_epoch < nepochs:
         if RANK in (-1, 0):
             print("Starting Epoch: {}".format(global_epoch))
