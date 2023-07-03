@@ -347,32 +347,33 @@ def eval_model(val_loader, global_step, device, model, checkpoint_dir):
     print("Evaluating for {} steps".format(eval_steps))
     sync_losses, recon_losses = [], []
     step = 0
-    while 1:
-        for x, indiv_mels, mel, gt in val_loader:
-            step += 1
-            model.eval()
+    pbar = tqdm(enumerate(val_loader), total=len(val_loader))
+    for x, indiv_mels, mel, gt in pbar:
+        step += 1
+        model.eval()
 
-            # Move data to CUDA device
-            x = x.to(device).float() / 255.0
-            gt = gt.to(device).float() / 255.0
-            mel = mel.to(device).float()
-            indiv_mels = indiv_mels.to(device).float()
+        # Move data to CUDA device
+        x = x.to(device).float() / 255.0
+        gt = gt.to(device).float() / 255.0
+        mel = mel.to(device).float()
+        indiv_mels = indiv_mels.to(device).float()
 
-            g = model(indiv_mels, x)
+        g = model(indiv_mels, x)
 
-            sync_loss = get_sync_loss(mel, g)
-            l1loss = recon_loss(g, gt)
+        sync_loss = get_sync_loss(mel, g)
+        l1loss = recon_loss(g, gt)
 
-            sync_losses.append(sync_loss.item())
-            recon_losses.append(l1loss.item())
+        sync_losses.append(sync_loss.item())
+        recon_losses.append(l1loss.item())
 
-            if step > eval_steps:
-                averaged_sync_loss = sum(sync_losses) / len(sync_losses)
-                averaged_recon_loss = sum(recon_losses) / len(recon_losses)
+        if step > eval_steps:
+            break
+    averaged_sync_loss = sum(sync_losses) / len(sync_losses)
+    averaged_recon_loss = sum(recon_losses) / len(recon_losses)
 
-                print("L1: {}, Sync loss: {}".format(averaged_recon_loss, averaged_sync_loss))
+    print("L1: {}, Sync loss: {}".format(averaged_recon_loss, averaged_sync_loss))
 
-                return averaged_sync_loss
+    return averaged_sync_loss
 
 
 def save_checkpoint(model, optimizer, step, checkpoint_dir, epoch):
