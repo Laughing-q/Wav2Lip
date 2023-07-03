@@ -441,6 +441,9 @@ if __name__ == "__main__":
         # )
         val_loader = DataLoader(train_dataset, batch_size=hparams.batch_size, num_workers=4)
         hparams.test = 2
+    out_list = [None]
+    dist.scatter_object_list(out_list, [hparams.test for _ in range(WORLD_SIZE)], src=0)
+    hparams.test = out_list[0]
 
     # Model
     model = Wav2Lip().to(device)
