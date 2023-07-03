@@ -259,10 +259,11 @@ def train(
     resumed_step = global_step
 
     while global_epoch < nepochs:
+        running_sync_loss, running_l1_loss = 0.0, 0.0
+        prog_bar = enumerate(train_loader)
         if RANK in (-1, 0):
             print("Starting Epoch: {}".format(global_epoch))
-        running_sync_loss, running_l1_loss = 0.0, 0.0
-        prog_bar = tqdm(enumerate(train_loader), total=len(train_loader))
+            prog_bar = tqdm(enumerate(train_loader), total=len(train_loader))
         for step, (x, indiv_mels, mel, gt) in prog_bar:
             model.train()
             optimizer.zero_grad()
@@ -315,11 +316,12 @@ def train(
             #                 "syncnet_wt", 0.01
             #             )  # without image GAN a lesser weight is sufficient
 
-            prog_bar.set_description(
-                "L1: {}, Sync Loss: {}".format(
-                    running_l1_loss / (step + 1), running_sync_loss / (step + 1)
+            if RANK in (0, -1):
+                prog_bar.set_description(
+                    "L1: {}, Sync Loss: {}".format(
+                        running_l1_loss / (step + 1), running_sync_loss / (step + 1)
+                    )
                 )
-            )
 
         if RANK in (-1, 0):
             save_sample_images(x, g, gt, global_epoch, checkpoint_dir)
