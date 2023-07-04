@@ -450,7 +450,6 @@ if __name__ == "__main__":
         syncnet,
         None,
         reset_optimizer=True,
-        overwrite_global_states=False,
     )
     syncnet.to(device)
 
