@@ -257,15 +257,17 @@ def train(
 ):
     global global_step, global_epoch
     resumed_step = global_step
-    average_sync_loss = torch.tensor(10, device=device)  # init average_sync_loss
 
     while global_epoch < nepochs:
+        if global_epoch >= 20:
+            # without image GAN a lesser weight is sufficient
+            hparams.set_hparam("syncnet_wt", 0.01)
+
         running_sync_loss, running_l1_loss = 0.0, 0.0
         prog_bar = enumerate(train_loader)
         if RANK in (-1, 0):
             print("Starting Epoch: {}".format(global_epoch))
             prog_bar = tqdm(enumerate(train_loader), total=len(train_loader))
-        print("average loss:", average_sync_loss)
         for step, (x, indiv_mels, mel, gt) in prog_bar:
             model.train()
             optimizer.zero_grad()
@@ -304,20 +306,6 @@ def train(
             else:
                 running_sync_loss += 0.0
 
-            # if global_step % checkpoint_interval == 0:
-            #     save_checkpoint(model, optimizer, global_step, checkpoint_dir, global_epoch)
-            #
-            # if global_step % hparams.eval_interval == 0:
-            #     with torch.no_grad():
-            #         average_sync_loss = eval_model(
-            #             val_loader, global_step, device, model, checkpoint_dir
-            #         )
-            #
-            #         if average_sync_loss < 0.75:
-            #             hparams.set_hparam(
-            #                 "syncnet_wt", 0.01
-            #             )  # without image GAN a lesser weight is sufficient
-
             if RANK in (0, -1):
                 prog_bar.set_description(
                     "L1: {}, Sync Loss: {}".format(
@@ -330,13 +318,13 @@ def train(
             save_checkpoint(model, optimizer, global_step, checkpoint_dir, global_epoch)
             with torch.no_grad():
                 average_sync_loss = eval_model(val_loader, global_step, device, model, checkpoint_dir)
-            average_sync_loss = torch.tensor(average_sync_loss, device=device)
 
             # if average_sync_loss < 0.75:
             #     # without image GAN a lesser weight is sufficient
             #     hparams.set_hparam("syncnet_wt", 0.01)
-        dist.barrier()
-        dist.broadcast(average_sync_loss, src=0)
+        # NOTE: This barrier() here gets stuck while DDP training
+        # dist.barrier()
+        # dist.broadcast(average_sync_loss, src=0)
         # NOTE: scatter `syncnet_wt` to other machines.
         # out_syncnet_wt = [0.0]   # it has to be a list object.
         # dist.scatter_object_list(out_syncnet_wt, [hparams.syncnet_wt for _ in range(WORLD_SIZE)], src=0)
