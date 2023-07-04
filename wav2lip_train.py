@@ -452,6 +452,7 @@ if __name__ == "__main__":
         reset_optimizer=True,
     )
     syncnet.to(device)
+    syncnet.eval()
 
     os.makedirs(checkpoint_dir, exist_ok=True)
 
