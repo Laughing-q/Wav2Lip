@@ -256,7 +256,7 @@ def train(
     epochs=None,
 ):
     nb = len(train_loader)  # number of batches
-    for epoch in epochs:
+    for epoch in range(epochs):
         if epoch == 20:
             # without image GAN a lesser weight is sufficient
             hparams.set_hparam("syncnet_wt", 0.01)
@@ -305,7 +305,7 @@ def train(
             save_sample_images(x, g, gt, epoch, checkpoint_dir)
             save_checkpoint(model, optimizer, n, checkpoint_dir, epoch)
             with torch.no_grad():
-                average_sync_loss = eval_model(val_loader, n, device, model, checkpoint_dir)
+                average_sync_loss = eval_model(val_loader, device, model)
 
             # if average_sync_loss < 0.75:
             #     # without image GAN a lesser weight is sufficient
@@ -453,8 +453,7 @@ if __name__ == "__main__":
     )
     syncnet.to(device)
 
-    if not os.path.exists(checkpoint_dir):
-        os.mkdir(checkpoint_dir)
+    os.makedirs(checkpoint_dir, exist_ok=True)
 
     # Train!
     train(
