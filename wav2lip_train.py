@@ -464,5 +464,5 @@ if __name__ == "__main__":
         val_loader,
         optimizer,
         checkpoint_dir=checkpoint_dir,
-        nepochs=hparams.nepochs,
+        epochs=hparams.epochs,
     )
