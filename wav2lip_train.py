@@ -27,7 +27,7 @@ RANK = int(os.getenv("RANK", -1))
 WORLD_SIZE = int(os.getenv("WORLD_SIZE", 1))
 
 global_step = 0
-global_epoch = 0
+epoch = 0
 window_size = 5
 syncnet_mel_step_size = 16
 
@@ -253,22 +253,20 @@ def train(
     val_loader,
     optimizer,
     checkpoint_dir=None,
-    nepochs=None,
+    epochs=None,
 ):
-    global global_step, global_epoch
-    resumed_step = global_step
-
-    while global_epoch < nepochs:
-        if global_epoch >= 20:
+    nb = len(train_loader)  # number of batches
+    for epoch in epochs:
+        if epoch == 20:
             # without image GAN a lesser weight is sufficient
             hparams.set_hparam("syncnet_wt", 0.01)
 
         running_sync_loss, running_l1_loss = 0.0, 0.0
         prog_bar = enumerate(train_loader)
         if RANK in (-1, 0):
-            print("Starting Epoch: {}".format(global_epoch))
             prog_bar = tqdm(enumerate(train_loader), total=len(train_loader))
-        for step, (x, indiv_mels, mel, gt) in prog_bar:
+        for i, (x, indiv_mels, mel, gt) in prog_bar:
+            n = epoch * nb + i
             model.train()
             optimizer.zero_grad()
 
@@ -280,11 +278,7 @@ def train(
 
             g = model(indiv_mels, x)
 
-            if hparams.syncnet_wt > 0.0:
-                sync_loss = get_sync_loss(mel, g)
-            else:
-                sync_loss = 0.0
-
+            sync_loss = get_sync_loss(mel, g) if hparams.syncnet_wt > 0.0 else 0.0
             l1loss = recon_loss(g, gt)
             if RANK != -1:
                 sync_loss *= WORLD_SIZE
@@ -294,12 +288,6 @@ def train(
             loss.backward()
             optimizer.step()
 
-            # if global_step % checkpoint_interval == 0:
-            #     save_sample_images(x, g, gt, global_step, checkpoint_dir)
-
-            global_step += 1
-            cur_session_steps = global_step - resumed_step
-
             running_l1_loss += l1loss.item()
             if hparams.syncnet_wt > 0.0:
                 running_sync_loss += sync_loss.item()
@@ -308,16 +296,16 @@ def train(
 
             if RANK in (0, -1):
                 prog_bar.set_description(
-                    "L1: {}, Sync Loss: {}".format(
-                        running_l1_loss / (step + 1), running_sync_loss / (step + 1)
+                    "Epoch: {}, L1: {}, Sync Loss: {}".format(
+                        epoch, running_l1_loss / (i + 1), running_sync_loss / (i + 1)
                     )
                 )
 
         if RANK in (-1, 0):
-            save_sample_images(x, g, gt, global_epoch, checkpoint_dir)
-            save_checkpoint(model, optimizer, global_step, checkpoint_dir, global_epoch)
+            save_sample_images(x, g, gt, epoch, checkpoint_dir)
+            save_checkpoint(model, optimizer, n, checkpoint_dir, epoch)
             with torch.no_grad():
-                average_sync_loss = eval_model(val_loader, global_step, device, model, checkpoint_dir)
+                average_sync_loss = eval_model(val_loader, n, device, model, checkpoint_dir)
 
             # if average_sync_loss < 0.75:
             #     # without image GAN a lesser weight is sufficient
@@ -329,10 +317,9 @@ def train(
         # out_syncnet_wt = [0.0]   # it has to be a list object.
         # dist.scatter_object_list(out_syncnet_wt, [hparams.syncnet_wt for _ in range(WORLD_SIZE)], src=0)
         # hparams.set_hparam("syncnet_wt", out_syncnet_wt[0])
-        global_epoch += 1
 
 
-def eval_model(val_loader, global_step, device, model, checkpoint_dir):
+def eval_model(val_loader, device, model):
     eval_steps = 700
     sync_losses, recon_losses = [], []
     step = 0
@@ -378,15 +365,11 @@ def save_checkpoint(model, optimizer, step, checkpoint_dir, epoch):
         },
         checkpoint_path,
     )
-    print("Saved checkpoint:", checkpoint_path)
 
 
-def load_checkpoint(path, model, optimizer, reset_optimizer=False, overwrite_global_states=True):
-    global global_step
-    global global_epoch
-
+def load_checkpoint(path, model, optimizer, reset_optimizer=False):
     print("Load checkpoint from: {}".format(path))
-    checkpoint = torch.load(path, map_location='cpu')
+    checkpoint = torch.load(path, map_location="cpu")
     s = checkpoint["state_dict"]
     new_s = {}
     for k, v in s.items():
@@ -397,9 +380,6 @@ def load_checkpoint(path, model, optimizer, reset_optimizer=False, overwrite_glo
         if optimizer_state is not None:
             print("Load optimizer state from {}".format(path))
             optimizer.load_state_dict(checkpoint["optimizer"])
-    if overwrite_global_states:
-        global_step = checkpoint["global_step"]
-        global_epoch = checkpoint["global_epoch"]
 
     return model
 
@@ -418,7 +398,11 @@ if __name__ == "__main__":
 
     sampler = None if RANK == -1 else distributed.DistributedSampler(train_dataset, shuffle=True)
     train_loader = DataLoader(
-        train_dataset, batch_size=hparams.batch_size, shuffle=sampler is None, num_workers=8, sampler=sampler
+        train_dataset,
+        batch_size=hparams.batch_size,
+        shuffle=sampler is None,
+        num_workers=8,
+        sampler=sampler,
     )
 
     val_loader = None
