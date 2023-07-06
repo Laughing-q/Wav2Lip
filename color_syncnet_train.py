@@ -24,8 +24,6 @@ import warnings
 warnings.filterwarnings("ignore")
 
 
-global_step = 0
-global_epoch = 0
 use_cuda = torch.cuda.is_available()
 print("use_cuda: {}".format(use_cuda))
 
@@ -145,17 +143,14 @@ def train(
     val_loader,
     optimizer,
     checkpoint_dir=None,
-    checkpoint_interval=None,
-    nepochs=None,
+    epochs=None,
 ):
-    global global_step, global_epoch
-
-    while global_epoch < nepochs:
+    nb = len(train_loader)  # number of batches
+    for epoch in range(epochs):
         running_loss = 0.0
         prog_bar = tqdm(enumerate(train_loader), total=len(train_loader))
-        for step, (im, mel, y) in prog_bar:
-            if im is None:
-                continue
+        for i, (im, mel, y) in prog_bar:
+            n = epoch * nb + i
             model.train()
             optimizer.zero_grad()
 
@@ -169,50 +164,43 @@ def train(
             loss.backward()
             optimizer.step()
 
-            global_step += 1
             running_loss += loss.detach().cpu().item()
 
-            if global_step == 1 or global_step % checkpoint_interval == 0:
-                save_checkpoint(model, optimizer, global_step, checkpoint_dir, global_epoch)
-
-            # if global_step % hparams.syncnet_eval_interval == 0:
-            #     with torch.no_grad():
-            #         eval_model(test_data_loader, global_step, device, model, checkpoint_dir)
-
-            prog_bar.set_description("Loss: {}".format(running_loss / (step + 1)))
-
-        global_epoch += 1
+            prog_bar.set_description("Loss: {}".format(running_loss / (i + 1)))
 
 
-def eval_model(test_data_loader, global_step, device, model, checkpoint_dir):
+        save_checkpoint(model, optimizer, n, checkpoint_dir, epoch)
+        with torch.no_grad():
+            eval_model(val_loader, device, model)
+
+
+def eval_model(val_loader, device, model):
     eval_steps = 1400
     print("Evaluating for {} steps".format(eval_steps))
     losses = []
-    while 1:
-        for step, (im, mel, y) in enumerate(test_data_loader):
-            model.eval()
+    pbar = tqdm(enumerate(val_loader), total=len(val_loader))
+    for step, (im, mel, y) in pbar:
+        model.eval()
 
-            # Transform data to CUDA device
-            im = im.to(device).float() / 255.0
-            mel = mel.to(device).float()
+        # Transform data to CUDA device
+        im = im.to(device).float() / 255.0
+        mel = mel.to(device).float()
 
-            a, v = model(mel, im)
-            y = y.to(device)
+        a, v = model(mel, im)
+        y = y.to(device)
 
-            loss = cosine_loss(a, v, y)
-            losses.append(loss.item())
+        loss = cosine_loss(a, v, y)
+        losses.append(loss.item())
 
-            if step > eval_steps:
-                break
+        if step > eval_steps:
+            break
 
-        averaged_loss = sum(losses) / len(losses)
-        print(averaged_loss)
-
-        return
+    averaged_loss = sum(losses) / len(losses)
+    print(averaged_loss)
 
 
 def save_checkpoint(model, optimizer, step, checkpoint_dir, epoch):
-    checkpoint_path = osp.join(checkpoint_dir, "checkpoint_step{:09d}.pth".format(global_step))
+    checkpoint_path = osp.join(checkpoint_dir, "checkpoint_step{:09d}.pth".format(epoch))
     optimizer_state = optimizer.state_dict() if hparams.save_optimizer_state else None
     torch.save(
         {
@@ -235,9 +223,6 @@ def _load(checkpoint_path):
 
 
 def load_checkpoint(path, model, optimizer, reset_optimizer=False):
-    global global_step
-    global global_epoch
-
     print("Load checkpoint from: {}".format(path))
     checkpoint = _load(path)
     model.load_state_dict(checkpoint["state_dict"])
@@ -246,8 +231,6 @@ def load_checkpoint(path, model, optimizer, reset_optimizer=False):
         if optimizer_state is not None:
             print("Load optimizer state from {}".format(path))
             optimizer.load_state_dict(checkpoint["optimizer"])
-    global_step = checkpoint["global_step"]
-    global_epoch = checkpoint["global_epoch"]
 
     return model
 
@@ -311,6 +294,5 @@ if __name__ == "__main__":
         val_loader,
         optimizer,
         checkpoint_dir=checkpoint_dir,
-        checkpoint_interval=hparams.syncnet_checkpoint_interval,
-        nepochs=hparams.epochs,
+        epochs=hparams.epochs,
     )

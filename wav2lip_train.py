@@ -26,8 +26,6 @@ LOCAL_RANK = int(os.getenv("LOCAL_RANK", -1))
 RANK = int(os.getenv("RANK", -1))
 WORLD_SIZE = int(os.getenv("WORLD_SIZE", 1))
 
-global_step = 0
-epoch = 0
 window_size = 5
 syncnet_mel_step_size = 16
 
