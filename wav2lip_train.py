@@ -47,7 +47,8 @@ class Wav2LipDataset(Dataset):
     """Wav2LipDataset
 
     Attributes:
-        root
+    root1
+    └── root2
         └── images
             └── id
                 └── 0.jpg
@@ -60,7 +61,7 @@ class Wav2LipDataset(Dataset):
 
     def __init__(self, im_dir, audio_dir):
         print("Loading image files...")
-        id_dirs = glob(osp.join(im_dir, "*"))
+        id_dirs = glob(osp.join(im_dir, "*", "*"))
         self.im_files = []
         self.im_range = {}
         print("Checking image files...")
@@ -80,7 +81,7 @@ class Wav2LipDataset(Dataset):
                 )
                 continue
             self.im_files += frame_files
-            self.im_range[Path(id_dir).name] = (min(frame_ids), max(frame_ids) + 1)
+            self.im_range[id_dir] = (min(frame_ids), max(frame_ids) + 1)
         print(f"Loaded {len(self.im_files)} image files...")
 
         print("Loading audios...")
@@ -90,7 +91,7 @@ class Wav2LipDataset(Dataset):
             # mel = self.get_mel(af)
             # audios[Path(af).with_suffix("").name] = mel
             # np.save(af.replace(".aac", ".npy"), mel)
-            audios[Path(af).with_suffix("").name] = np.load(af)
+            audios[str(Path(af).with_suffix(""))] = np.load(af)
         self.audios = audios
 
     def get_frame_id(self, im_file):
@@ -171,8 +172,9 @@ class Wav2LipDataset(Dataset):
     def __getitem__(self, idx):
         im_file = self.im_files[idx]
         p = Path(im_file)
-        id = p.parent.name
-        mel = self.audios[id]
+        id = str(p.parent)
+        akey = id.replace("images", "audios")
+        mel = self.audios[akey]
         window, frame_id = self.generate_window(p)
 
         wrong_frame_id = random.choice(range(*self.im_range[id]))
