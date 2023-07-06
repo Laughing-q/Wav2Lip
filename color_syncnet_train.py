@@ -38,7 +38,8 @@ class SyncDataset(Dataset):
     """SyncDataset
 
     Attributes:
-        root
+    root1
+    └── root2
         └── images
             └── id
                 └── *.jpg
@@ -48,7 +49,7 @@ class SyncDataset(Dataset):
 
     def __init__(self, im_dir, audio_dir):
         print("Loading image files...")
-        id_dirs = glob(osp.join(im_dir, "*"))
+        id_dirs = glob(osp.join(im_dir, "*", "*"))
         self.im_files = []
         print("Checking image files...")
         for id_dir in id_dirs:
@@ -62,12 +63,12 @@ class SyncDataset(Dataset):
         print(f"Loaded {len(self.im_files)} image files...")
         print("Loading audios...")
         audios = {}
-        audio_files = glob(osp.join(audio_dir, "*"))
+        audio_files = glob(osp.join(audio_dir, "*", "*"))
         for af in tqdm(audio_files, total=len(audio_files)):
             # mel = self.get_mel(af)
             # audios[Path(af).with_suffix("").name] = mel
             # np.save(af.replace(".aac", ".npy"), mel)
-            audios[Path(af).with_suffix("").name] = np.load(af)
+            audios[str(Path(af).with_suffix(""))] = np.load(af)
         self.audios = audios
 
     def get_frame_id(self, im_file):
@@ -107,7 +108,8 @@ class SyncDataset(Dataset):
     def __getitem__(self, idx):
         im_file = self.im_files[idx]
         p = Path(im_file)
-        mel = self.audios[p.parent.name]
+        akey = str(p.parent).replace("images", "audios")
+        mel = self.audios[akey]
         window, frame_id = self.generate_window(p)
 
         neg_sample = idx % 2
@@ -267,8 +269,8 @@ if __name__ == "__main__":
     )
     # Dataset and Dataloader setup
     train_dataset = SyncDataset(
-        im_dir="/d/dataset/audio/HDTF_DATA/RD25_images",
-        audio_dir="/d/dataset/audio/HDTF_DATA/RD25_audios/npy",
+        im_dir="/d/dataset/audio/final/val/images",
+        audio_dir="/d/dataset/audio/final/val/audios",
     )
     # model.eval()
     # for i, (im, mel, y) in enumerate(train_dataset):
@@ -310,5 +312,5 @@ if __name__ == "__main__":
         optimizer,
         checkpoint_dir=checkpoint_dir,
         checkpoint_interval=hparams.syncnet_checkpoint_interval,
-        nepochs=hparams.nepochs,
+        nepochs=hparams.epochs,
     )
