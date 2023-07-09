@@ -128,7 +128,7 @@ class SyncDataset(Dataset):
         x = torch.from_numpy(x)
         mel_patch = torch.from_numpy(mel_patch.T).unsqueeze(0)
 
-        return x, mel_patch, y, im_file
+        return x, mel_patch, y
 
 
 logloss = nn.BCELoss()
