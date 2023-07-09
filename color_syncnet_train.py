@@ -58,6 +58,7 @@ class SyncDataset(Dataset):
                         but got {len(frame_files)} for {id_dir}, ignoring {id_dir}.")
                 continue
             self.im_files += frame_files
+        random.shuffle(self.im_files)
         print(f"Loaded {len(self.im_files)} image files...")
         print("Loading audios...")
         audios = {}
@@ -79,12 +80,17 @@ class SyncDataset(Dataset):
 
     def crop_audio_window(self, mel, frame_id, neg_sample=False):
         start_idx = int(80.0 * (frame_id / float(hparams.fps)))
+        mel_len = len(mel)
         if neg_sample:
-            idx = random.randint(0, len(mel) - syncnet_mel_step_size)
+            idx = random.randint(0, mel_len - syncnet_mel_step_size)
             while start_idx == idx:
-                idx = random.randint(0, len(mel) - syncnet_mel_step_size)
+                idx = random.randint(0, mel_len - syncnet_mel_step_size)
             start_idx = idx
         end_idx = start_idx + syncnet_mel_step_size
+        # NOTE: handle the case that `end_idx` beyond the length of mel.
+        if end_idx >= mel_len:
+            start_idx = mel_len - syncnet_mel_step_size
+            end_idx = mel_len
         return mel[start_idx:end_idx, :]
 
     def generate_window(self, p):
@@ -122,7 +128,7 @@ class SyncDataset(Dataset):
         x = torch.from_numpy(x)
         mel_patch = torch.from_numpy(mel_patch.T).unsqueeze(0)
 
-        return x, mel_patch, y
+        return x, mel_patch, y, im_file
 
 
 logloss = nn.BCELoss()
@@ -256,12 +262,14 @@ if __name__ == "__main__":
         audio_dir="/data/datasets/audio/final/train/audios",
     )
     # model.eval()
-    # for i, (im, mel, y) in enumerate(train_dataset):
-    #     # print(i, x.shape, mel.shape, y)
-    #     im = im.to(device).float() / 255.0
-    #     mel = mel.to(device).float()
-    #     a, v = model(mel[None], im[None])
-    #     print(a.shape, v.shape)
+    # for i, (im, mel, y, imf) in enumerate(train_dataset):
+    #     print(i, im.shape, mel.shape, y, imf)
+    #     assert im.shape == (15, 128, 256), f"{im.shape}"
+    #     assert mel.shape == (1, 80, 16), f"{mel.shape}"
+    #     # im = im.to(device).float() / 255.0
+    #     # mel = mel.to(device).float()
+    #     # a, v = model(mel[None], im[None])
+    #     # print(a.shape, v.shape)
     # exit()
 
     val_dataset = SyncDataset(
