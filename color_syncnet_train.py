@@ -281,11 +281,11 @@ if __name__ == "__main__":
         train_dataset,
         batch_size=hparams.syncnet_batch_size,
         shuffle=True,
-        num_workers=8,
+        num_workers=4,
     )
 
     val_loader = DataLoader(
-        val_dataset, batch_size=hparams.syncnet_batch_size, num_workers=8
+        val_dataset, batch_size=hparams.syncnet_batch_size, num_workers=4
     )
 
     device = torch.device("cuda" if use_cuda else "cpu")
