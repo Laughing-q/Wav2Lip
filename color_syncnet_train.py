@@ -52,10 +52,15 @@ class SyncDataset(Dataset):
         print("Checking image files...")
         for id_dir in id_dirs:
             frame_files = glob(osp.join(id_dir, "*"))
+            frame_ids = [self.get_frame_id(frame_file) for frame_file in frame_files]
+            if sum(frame_ids) != sum(range(min(frame_ids), max(frame_ids) + 1)):
+                print("WARNING: The numbers of frames should be continuous, "
+                      f"but got discontinuous numbers, ignoring {id_dir}.")
+                continue
             # NOTE: check the numbers of each id, should be more than `window_size * 2`
             if len(frame_files) < 2 * window_size:
-                print(f"WARNING: The number of frames should be more than {2 * window_size}, \
-                        but got {len(frame_files)} for {id_dir}, ignoring {id_dir}.")
+                print(f"WARNING: The number of frames should be more than {2 * window_size}, "
+                        f"but got {len(frame_files)} for {id_dir}, ignoring {id_dir}.")
                 continue
             self.im_files += frame_files
         random.shuffle(self.im_files)
