@@ -263,8 +263,8 @@ if __name__ == "__main__":
     )
     # Dataset and Dataloader setup
     train_dataset = SyncDataset(
-        im_dir="/data/datasets/audio/final/train/images",
-        audio_dir="/data/datasets/audio/final/train/audios",
+        im_dir="/sdata/datasets/audio/final/train/images",
+        audio_dir="/sdata/datasets/audio/final/train/audios",
     )
     # model.eval()
     # for i, (im, mel, y, imf) in enumerate(train_dataset):
@@ -278,19 +278,19 @@ if __name__ == "__main__":
     # exit()
 
     val_dataset = SyncDataset(
-        im_dir="/data/datasets/audio/final/val/images",
-        audio_dir="/data/datasets/audio/final/val/audios",
+        im_dir="/sdata/datasets/audio/final/val/images",
+        audio_dir="/sdata/datasets/audio/final/val/audios",
     )
 
     train_loader = DataLoader(
         train_dataset,
         batch_size=hparams.syncnet_batch_size,
         shuffle=True,
-        num_workers=4,
+        num_workers=16,
     )
 
     val_loader = DataLoader(
-        val_dataset, batch_size=hparams.syncnet_batch_size, num_workers=4
+        val_dataset, batch_size=hparams.syncnet_batch_size, num_workers=8
     )
 
     device = torch.device("cuda" if use_cuda else "cpu")
