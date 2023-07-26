@@ -186,8 +186,7 @@ def train(
 
 
 def eval_model(val_loader, device, model):
-    eval_steps = 1400
-    print("Evaluating for {} steps".format(eval_steps))
+    print("Evaluating...")
     losses = []
     pbar = tqdm(enumerate(val_loader), total=len(val_loader))
     for step, (im, mel, y) in pbar:
@@ -202,9 +201,6 @@ def eval_model(val_loader, device, model):
 
         loss = cosine_loss(a, v, y)
         losses.append(loss.item())
-
-        if step > eval_steps:
-            break
 
     averaged_loss = sum(losses) / len(losses)
     print(averaged_loss)
