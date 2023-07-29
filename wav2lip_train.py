@@ -84,16 +84,16 @@ class Wav2LipDataset(Dataset):
 
         print("Loading audios...")
         audios = {}
-        audio_files = glob(osp.join(audio_dir, "*"))
+        audio_files = glob(osp.join(audio_dir, "*", "*"))
         for af in tqdm(audio_files, total=len(audio_files)):
             # mel = self.get_mel(af)
-            # audios[Path(af).with_suffix("").name] = mel
+            # audios[Path(af).stem] = mel
             # np.save(af.replace(".aac", ".npy"), mel)
             audios[str(Path(af).with_suffix(""))] = np.load(af)
         self.audios = audios
 
     def get_frame_id(self, im_file):
-        return int(Path(im_file).with_suffix("").name)
+        return int(Path(im_file).stem)
 
     def get_mel(self, audio_file):
         wav = audio.load_wav(audio_file, hparams.sample_rate)
@@ -134,7 +134,7 @@ class Wav2LipDataset(Dataset):
 
     def generate_window(self, p):
         window = []
-        frame_id = int(p.with_suffix("").name)
+        frame_id = int(p.stem)
         end_id = frame_id + window_size
         end_exist = (p.parent / f"{end_id}.jpg").exists()
         iterator = range(frame_id, end_id) if end_exist else range(frame_id - window_size, frame_id)
@@ -392,8 +392,8 @@ if __name__ == "__main__":
     # Dataset and Dataloader setup
     with torch_distributed_zero_first(RANK):
         train_dataset = Wav2LipDataset(
-            im_dir="/data/datasets/audio/RD25_images",
-            audio_dir="/data/datasets/audio/RD25_audios/npy",
+        im_dir="/sdata/datasets/audio/final/train/images",
+        audio_dir="/sdata/datasets/audio/final/train/audios",
         )
 
     sampler = None if RANK == -1 else distributed.DistributedSampler(train_dataset, shuffle=True)
@@ -407,10 +407,10 @@ if __name__ == "__main__":
 
     val_loader = None
     if RANK in (-1, 0):
-        # val_dataset = Wav2LipDataset(
-        #     im_dir="/d/dataset/audio/HDTF_DATA/RD25_images",
-        #     audio_dir="/d/dataset/audio/HDTF_DATA/RD25_audios/npy",
-        # )
+        val_dataset = Wav2LipDataset(
+            im_dir="/sdata/datasets/audio/final/val/images",
+            audio_dir="/sdata/datasets/audio/final/val/audios",
+        )
         val_loader = DataLoader(train_dataset, batch_size=hparams.batch_size, num_workers=4)
 
     # Model
