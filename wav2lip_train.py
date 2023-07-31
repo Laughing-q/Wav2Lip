@@ -387,7 +387,7 @@ def load_checkpoint(path, model, optimizer, reset_optimizer=False):
 if __name__ == "__main__":
     checkpoint_dir = "runs/wav2lip_ddp"
     checkpoint_path = None
-    syncnet_checkpoint_path = "./runs/syncnet_first/checkpoint_step000490000.pth"
+    syncnet_checkpoint_path = "runs/syncnet/checkpoint_step000000006.pth"
 
     # Dataset and Dataloader setup
     with torch_distributed_zero_first(RANK):
