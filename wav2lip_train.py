@@ -66,6 +66,10 @@ class Wav2LipDataset(Dataset):
         for id_dir in id_dirs:
             frame_files = glob(osp.join(id_dir, "*"))
             frame_ids = [self.get_frame_id(frame_file) for frame_file in frame_files]
+            if sum(frame_ids) != sum(range(min(frame_ids), max(frame_ids) + 1)):
+                print("WARNING: The numbers of frames should be continuous, "
+                      f"but got discontinuous numbers, ignoring {id_dir}.")
+                continue
             # NOTE: filter frames that frame id less than 2, for `self.get_segmented_mels`
             frame_files = [
                 frame_file for i, frame_file in enumerate(frame_files) if frame_ids[i] > 2
