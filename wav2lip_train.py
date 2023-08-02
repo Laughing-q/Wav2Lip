@@ -203,7 +203,7 @@ class Wav2LipDataset(Dataset):
         return x, indiv_mels, mel_patch, y
 
 
-def save_sample_images(x, g, gt, epoch, checkpoint_dir):
+def save_sample_images(x, g, gt, epoch, step, checkpoint_dir):
     x = (x.detach().cpu().numpy().transpose(0, 2, 3, 4, 1) * 255.0).astype(np.uint8)
     g = (g.detach().cpu().numpy().transpose(0, 2, 3, 4, 1) * 255.0).astype(np.uint8)
     gt = (gt.detach().cpu().numpy().transpose(0, 2, 3, 4, 1) * 255.0).astype(np.uint8)
@@ -213,9 +213,10 @@ def save_sample_images(x, g, gt, epoch, checkpoint_dir):
     if not osp.exists(folder):
         os.mkdir(folder)
     collage = np.concatenate((refs, inps, g, gt), axis=-2)
+    # TODO
     for batch_idx, c in enumerate(collage):
         for t in range(len(c)):
-            cv2.imwrite("{}/{}_{}.jpg".format(folder, batch_idx, t), c[t])
+            cv2.imwrite("{}/{}_{}.jpg".format(folder, step, t), c[t])
 
 
 logloss = nn.BCELoss()
@@ -261,6 +262,7 @@ def train(
 ):
     nb = len(train_loader)  # number of batches
     for epoch in range(epochs):
+        model.train()
         if epoch == 20:
             # without image GAN a lesser weight is sufficient
             hparams.set_hparam("syncnet_wt", 0.01)
@@ -271,7 +273,6 @@ def train(
             prog_bar = tqdm(enumerate(train_loader), total=len(train_loader))
         for i, (x, indiv_mels, mel, gt) in prog_bar:
             n = epoch * nb + i
-            model.train()
             optimizer.zero_grad()
 
             # Move data to CUDA device
@@ -306,10 +307,10 @@ def train(
                 )
 
         if RANK in (-1, 0):
-            save_sample_images(x, g, gt, epoch, checkpoint_dir)
+            # save_sample_images(x, g, gt, epoch, checkpoint_dir)
             save_checkpoint(model, optimizer, n, checkpoint_dir, epoch)
             with torch.no_grad():
-                average_sync_loss = eval_model(val_loader, device, model)
+                average_sync_loss = eval_model(val_loader, device, model, epoch)
 
             # if average_sync_loss < 0.75:
             #     # without image GAN a lesser weight is sufficient
@@ -323,14 +324,14 @@ def train(
         # hparams.set_hparam("syncnet_wt", out_syncnet_wt[0])
 
 
-def eval_model(val_loader, device, model):
+def eval_model(val_loader, device, model, epoch):
     eval_steps = 700
     sync_losses, recon_losses = [], []
     step = 0
     pbar = tqdm(val_loader, total=len(val_loader))
+    model.eval()
     for x, indiv_mels, mel, gt in pbar:
         step += 1
-        model.eval()
 
         # Move data to CUDA device
         x = x.to(device).float() / 255.0
@@ -347,6 +348,7 @@ def eval_model(val_loader, device, model):
         recon_losses.append(l1loss.item())
         pbar.set_description("Evaluating for {} steps".format(eval_steps))
 
+        save_sample_images(x, g, gt, epoch, step, checkpoint_dir)
         if step > eval_steps:
             break
     averaged_sync_loss = sum(sync_losses) / len(sync_losses)
