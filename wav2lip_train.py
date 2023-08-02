@@ -402,6 +402,14 @@ if __name__ == "__main__":
                 sum(p.numel() for p in model.parameters() if p.requires_grad)
             )
         )
+
+    load_checkpoint(
+        "runs/wav2lip_ddp-/checkpoint_step000000000.pth",
+        model,
+        None,
+        reset_optimizer=True,
+    )
+
     if WORLD_SIZE > 1:
         model = DDP(model, device_ids=[RANK])
     # model.eval()
@@ -434,13 +442,6 @@ if __name__ == "__main__":
     )
     syncnet.to(device)
     syncnet.eval()
-
-    load_checkpoint(
-        "runs/wav2lip_ddp-/checkpoint_step000000000.pth",
-        model,
-        None,
-        reset_optimizer=True,
-    )
 
     # Dataset and Dataloader setup
     with torch_distributed_zero_first(RANK):
