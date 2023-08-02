@@ -212,11 +212,11 @@ def save_sample_images(x, g, gt, epoch, step, checkpoint_dir):
     folder = osp.join(checkpoint_dir, "samples_step{:09d}".format(epoch))
     if not osp.exists(folder):
         os.mkdir(folder)
+    # (bs, window_size, h, 4*h, 3)
     collage = np.concatenate((refs, inps, g, gt), axis=-2)
-    # TODO
     for batch_idx, c in enumerate(collage):
         for t in range(len(c)):
-            cv2.imwrite("{}/{}_{}.jpg".format(folder, step, t), c[t])
+            cv2.imwrite("{}/{}_{}_{}.jpg".format(folder, step, batch_idx, t), c[t])
 
 
 logloss = nn.BCELoss()
@@ -331,8 +331,6 @@ def eval_model(val_loader, device, model, epoch):
     pbar = tqdm(val_loader, total=len(val_loader))
     model.eval()
     for x, indiv_mels, mel, gt in pbar:
-        step += 1
-
         # Move data to CUDA device
         x = x.to(device).float() / 255.0
         gt = gt.to(device).float() / 255.0
@@ -348,8 +346,9 @@ def eval_model(val_loader, device, model, epoch):
         recon_losses.append(l1loss.item())
         pbar.set_description("Evaluating for {} steps".format(eval_steps))
 
-        save_sample_images(x, g, gt, epoch, step, checkpoint_dir)
+        step += 1
         if step > eval_steps:
+            save_sample_images(x, g, gt, epoch, step, checkpoint_dir)
             break
     averaged_sync_loss = sum(sync_losses) / len(sync_losses)
     averaged_recon_loss = sum(recon_losses) / len(recon_losses)
@@ -395,30 +394,6 @@ if __name__ == "__main__":
     checkpoint_path = None
     syncnet_checkpoint_path = "runs/syncnet/checkpoint_step000000006.pth"
 
-    # Dataset and Dataloader setup
-    with torch_distributed_zero_first(RANK):
-        train_dataset = Wav2LipDataset(
-        im_dir="/sdata/datasets/audio/final/train/images",
-        audio_dir="/sdata/datasets/audio/final/train/audios",
-        )
-
-    sampler = None if RANK == -1 else distributed.DistributedSampler(train_dataset, shuffle=True)
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=hparams.batch_size,
-        shuffle=sampler is None,
-        num_workers=8,
-        sampler=sampler,
-    )
-
-    val_loader = None
-    if RANK in (-1, 0):
-        val_dataset = Wav2LipDataset(
-            im_dir="/sdata/datasets/audio/final/val/images",
-            audio_dir="/sdata/datasets/audio/final/val/audios",
-        )
-        val_loader = DataLoader(train_dataset, batch_size=hparams.batch_size, num_workers=4)
-
     # Model
     model = Wav2Lip().to(device)
     if RANK in (0, -1):
@@ -460,16 +435,48 @@ if __name__ == "__main__":
     syncnet.to(device)
     syncnet.eval()
 
+    # Dataset and Dataloader setup
+    with torch_distributed_zero_first(RANK):
+        train_dataset = Wav2LipDataset(
+        im_dir="/sdata/datasets/audio/final/train/images",
+        audio_dir="/sdata/datasets/audio/final/train/audios",
+        )
+
+    sampler = None if RANK == -1 else distributed.DistributedSampler(train_dataset, shuffle=True)
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=hparams.batch_size,
+        shuffle=sampler is None,
+        num_workers=8,
+        sampler=sampler,
+    )
+
+    # eval
+    val_loader = None
+    if RANK in (-1, 0):
+        val_dataset = Wav2LipDataset(
+            im_dir="/sdata/datasets/audio/final/val/images",
+            audio_dir="/sdata/datasets/audio/final/val/audios",
+        )
+        val_loader = DataLoader(val_dataset, batch_size=hparams.batch_size * 2, num_workers=4, shuffle=True)
+
+    load_checkpoint(
+        "runs/wav2lip_ddp-/checkpoint_step000000000.pth",
+        model,
+        None,
+        reset_optimizer=True,
+    )
     os.makedirs(checkpoint_dir, exist_ok=True)
 
-    eval_model(val_loader, device, model, 0)
+    # with torch.no_grad():
+    #     eval_model(val_loader, device, model, 0)
     # Train!
-    # train(
-    #     device,
-    #     model,
-    #     train_loader,
-    #     val_loader,
-    #     optimizer,
-    #     checkpoint_dir=checkpoint_dir,
-    #     epochs=hparams.epochs,
-    # )
+    train(
+        device,
+        model,
+        train_loader,
+        val_loader,
+        optimizer,
+        checkpoint_dir=checkpoint_dir,
+        epochs=hparams.epochs,
+    )
