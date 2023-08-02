@@ -462,13 +462,14 @@ if __name__ == "__main__":
 
     os.makedirs(checkpoint_dir, exist_ok=True)
 
+    eval_model(val_loader, device, model, 0)
     # Train!
-    train(
-        device,
-        model,
-        train_loader,
-        val_loader,
-        optimizer,
-        checkpoint_dir=checkpoint_dir,
-        epochs=hparams.epochs,
-    )
+    # train(
+    #     device,
+    #     model,
+    #     train_loader,
+    #     val_loader,
+    #     optimizer,
+    #     checkpoint_dir=checkpoint_dir,
+    #     epochs=hparams.epochs,
+    # )
