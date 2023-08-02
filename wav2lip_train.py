@@ -435,6 +435,13 @@ if __name__ == "__main__":
     syncnet.to(device)
     syncnet.eval()
 
+    load_checkpoint(
+        "runs/wav2lip_ddp-/checkpoint_step000000000.pth",
+        model,
+        None,
+        reset_optimizer=True,
+    )
+
     # Dataset and Dataloader setup
     with torch_distributed_zero_first(RANK):
         train_dataset = Wav2LipDataset(
@@ -460,12 +467,6 @@ if __name__ == "__main__":
         )
         val_loader = DataLoader(val_dataset, batch_size=hparams.batch_size * 2, num_workers=4, shuffle=True)
 
-    load_checkpoint(
-        "runs/wav2lip_ddp-/checkpoint_step000000000.pth",
-        model,
-        None,
-        reset_optimizer=True,
-    )
     os.makedirs(checkpoint_dir, exist_ok=True)
 
     # with torch.no_grad():
