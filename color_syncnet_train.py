@@ -47,7 +47,7 @@ class SyncDataset(Dataset):
 
     def __init__(self, im_dir, audio_dir):
         print("Loading image files...")
-        id_dirs = glob(osp.join(im_dir, "*", "*"))
+        id_dirs = glob(osp.join(im_dir, "HDTF", "*"))
         self.im_files = []
         print("Checking image files...")
         for id_dir in id_dirs:
@@ -67,7 +67,7 @@ class SyncDataset(Dataset):
         print(f"Loaded {len(self.im_files)} image files...")
         print("Loading audios...")
         audios = {}
-        audio_files = glob(osp.join(audio_dir, "*", "*"))
+        audio_files = glob(osp.join(audio_dir, "HDTF", "*"))
         for af in tqdm(audio_files, total=len(audio_files)):
             # mel = self.get_mel(af)
             # audios[Path(af).with_suffix("").name] = mel
@@ -93,9 +93,9 @@ class SyncDataset(Dataset):
             start_idx = idx
         end_idx = start_idx + syncnet_mel_step_size
         # NOTE: handle the case that `end_idx` beyond the length of mel.
-        if end_idx >= mel_len:
-            start_idx = mel_len - syncnet_mel_step_size
-            end_idx = mel_len
+        # if end_idx >= mel_len:
+        #     start_idx = mel_len - syncnet_mel_step_size
+        #     end_idx = mel_len
         return mel[start_idx:end_idx, :]
 
     def generate_window(self, p):

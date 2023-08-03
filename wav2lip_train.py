@@ -59,7 +59,7 @@ class Wav2LipDataset(Dataset):
 
     def __init__(self, im_dir, audio_dir):
         print("Loading image files...")
-        id_dirs = glob(osp.join(im_dir, "*", "*"))
+        id_dirs = glob(osp.join(im_dir, "HDTF", "*"))
         self.im_files = []
         self.im_range = {}
         print("Checking image files...")
@@ -88,7 +88,7 @@ class Wav2LipDataset(Dataset):
 
         print("Loading audios...")
         audios = {}
-        audio_files = glob(osp.join(audio_dir, "*", "*"))
+        audio_files = glob(osp.join(audio_dir, "HDTF", "*"))
         for af in tqdm(audio_files, total=len(audio_files)):
             # mel = self.get_mel(af)
             # audios[Path(af).stem] = mel
@@ -131,9 +131,9 @@ class Wav2LipDataset(Dataset):
             start_idx = idx
         end_idx = start_idx + syncnet_mel_step_size
         # NOTE: handle the case that `end_idx` beyond the length of mel.
-        if end_idx >= mel_len:
-            start_idx = mel_len - syncnet_mel_step_size
-            end_idx = mel_len
+        # if end_idx >= mel_len:
+        #     start_idx = mel_len - syncnet_mel_step_size
+        #     end_idx = mel_len
         return mel[start_idx:end_idx, :]
 
     def generate_window(self, p):
@@ -403,12 +403,12 @@ if __name__ == "__main__":
             )
         )
 
-    load_checkpoint(
-        "runs/wav2lip_ddp-/checkpoint_step000000000.pth",
-        model,
-        None,
-        reset_optimizer=True,
-    )
+    # load_checkpoint(
+    #     "runs/wav2lip_ddp-/checkpoint_step000000000.pth",
+    #     model,
+    #     None,
+    #     reset_optimizer=True,
+    # )
 
     if WORLD_SIZE > 1:
         model = DDP(model, device_ids=[RANK])
