@@ -63,7 +63,6 @@ class SyncDataset(Dataset):
                         f"but got {len(frame_files)} for {id_dir}, ignoring {id_dir}.")
                 continue
             self.im_files += frame_files
-        random.shuffle(self.im_files)
         print(f"Loaded {len(self.im_files)} image files...")
         print("Loading audios...")
         audios = {}
@@ -286,7 +285,7 @@ if __name__ == "__main__":
     )
 
     val_loader = DataLoader(
-        val_dataset, batch_size=hparams.syncnet_batch_size, num_workers=8
+        val_dataset, batch_size=hparams.syncnet_batch_size * 2, num_workers=8
     )
 
     device = torch.device("cuda" if use_cuda else "cpu")
