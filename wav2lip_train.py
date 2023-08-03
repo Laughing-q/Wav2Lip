@@ -130,6 +130,7 @@ class Wav2LipDataset(Dataset):
                 idx = random.randint(0, mel_len - syncnet_mel_step_size)
             start_idx = idx
         end_idx = start_idx + syncnet_mel_step_size
+        # TODO
         # NOTE: handle the case that `end_idx` beyond the length of mel.
         # if end_idx >= mel_len:
         #     start_idx = mel_len - syncnet_mel_step_size
