@@ -1,6 +1,4 @@
-import torch
 from torch import nn
-from torch.nn import functional as F
 
 
 class Conv2d(nn.Module):
@@ -25,7 +23,7 @@ class nonorm_Conv2d(nn.Module):
         self.conv_block = nn.Sequential(
             nn.Conv2d(cin, cout, kernel_size, stride, padding),
         )
-        self.act = nn.LeakyReLU(0.01, inplace=True)
+        self.act = nn.SiLU(inplace=True)
 
     def forward(self, x):
         out = self.conv_block(x)
@@ -39,7 +37,7 @@ class Conv2dTranspose(nn.Module):
             nn.ConvTranspose2d(cin, cout, kernel_size, stride, padding, output_padding),
             nn.BatchNorm2d(cout),
         )
-        self.act = nn.ReLU()
+        self.act = nn.SiLU()
 
     def forward(self, x):
         out = self.conv_block(x)
