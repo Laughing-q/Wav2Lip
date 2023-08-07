@@ -59,7 +59,7 @@ class Wav2LipDataset(Dataset):
 
     def __init__(self, im_dir, audio_dir):
         print("Loading image files...")
-        id_dirs = glob(osp.join(im_dir, "HDTF", "*"))
+        id_dirs = glob(osp.join(im_dir, "*", "*"))
         self.im_files = []
         self.im_range = {}
         print("Checking image files...")
@@ -88,7 +88,7 @@ class Wav2LipDataset(Dataset):
 
         print("Loading audios...")
         audios = {}
-        audio_files = glob(osp.join(audio_dir, "HDTF", "*"))
+        audio_files = glob(osp.join(audio_dir, "*", "*"))
         for af in tqdm(audio_files, total=len(audio_files)):
             # mel = self.get_mel(af)
             # audios[Path(af).stem] = mel
@@ -132,9 +132,9 @@ class Wav2LipDataset(Dataset):
         end_idx = start_idx + syncnet_mel_step_size
         # TODO
         # NOTE: handle the case that `end_idx` beyond the length of mel.
-        # if end_idx >= mel_len:
-        #     start_idx = mel_len - syncnet_mel_step_size
-        #     end_idx = mel_len
+        if end_idx >= mel_len:
+            start_idx = mel_len - syncnet_mel_step_size
+            end_idx = mel_len
         return mel[start_idx:end_idx, :]
 
     def generate_window(self, p):
