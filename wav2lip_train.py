@@ -404,12 +404,12 @@ if __name__ == "__main__":
             )
         )
 
-    # load_checkpoint(
-    #     "runs/wav2lip_ddp-/checkpoint_step000000000.pth",
-    #     model,
-    #     None,
-    #     reset_optimizer=True,
-    # )
+    load_checkpoint(
+        "runs/wav2lip_ddp-old/checkpoint_step000000000.pth",
+        model,
+        None,
+        reset_optimizer=True,
+    )
 
     if WORLD_SIZE > 1:
         model = DDP(model, device_ids=[RANK])
