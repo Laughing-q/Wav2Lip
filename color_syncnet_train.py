@@ -249,7 +249,7 @@ if __name__ == "__main__":
     if not os.path.exists(checkpoint_dir):
         os.mkdir(checkpoint_dir)
 
-    device = torch.device("cuda" if use_cuda else "cpu")
+    device = torch.device("cuda:1" if use_cuda else "cpu")
     # Model
     model = SyncNet().to(device)
     print(
@@ -288,8 +288,6 @@ if __name__ == "__main__":
     val_loader = DataLoader(
         val_dataset, batch_size=hparams.syncnet_batch_size * 2, num_workers=8
     )
-
-    device = torch.device("cuda" if use_cuda else "cpu")
 
     optimizer = optim.Adam(
         [p for p in model.parameters() if p.requires_grad], lr=hparams.syncnet_lr
