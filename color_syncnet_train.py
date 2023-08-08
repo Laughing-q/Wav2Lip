@@ -170,6 +170,7 @@ def train(
             mel = mel.to(device).float()
             y = y.to(device)
 
+            # (b, 1, 80, 16), (b, 15, 128, 256)
             a, v = model(mel, im)
             loss = cosine_loss(a, v, y)
             loss.backward()

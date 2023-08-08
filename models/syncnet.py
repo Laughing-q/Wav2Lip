@@ -28,9 +28,13 @@ class SyncNet_color(nn.Module):
             Conv2d(512, 512, kernel_size=3, stride=1, padding=1, residual=True),
 
             Conv2d(512, 512, kernel_size=3, stride=2, padding=1),
-            Conv2d(512, 512, kernel_size=3, stride=1, padding=1),
+            Conv2d(512, 512, kernel_size=3, stride=1, padding=1, residual=True),
 
-            nn.AdaptiveAvgPool2d(1),
+            Conv2d(512, 512, kernel_size=3, stride=2, padding=1),
+            Conv2d(512, 512, kernel_size=3, stride=1, padding=1, residual=True),  # 4x4
+
+            # nn.AdaptiveAvgPool2d(1),
+            Conv2d(512, 512, kernel_size=4, stride=1, padding=0),  # 1x1
             Conv2d(512, 512, kernel_size=1, stride=1, padding=0),
             )
 
@@ -53,6 +57,7 @@ class SyncNet_color(nn.Module):
 
             Conv2d(256, 512, kernel_size=3, stride=1, padding=0),
             Conv2d(512, 512, kernel_size=1, stride=1, padding=0),
+
             )
 
     def forward(self, audio_sequences, face_sequences): # audio_sequences := (B, dim, T)
@@ -64,6 +69,5 @@ class SyncNet_color(nn.Module):
 
         audio_embedding = F.normalize(audio_embedding, p=2, dim=1)
         face_embedding = F.normalize(face_embedding, p=2, dim=1)
-
 
         return audio_embedding, face_embedding
