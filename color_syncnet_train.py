@@ -87,7 +87,9 @@ class SyncDataset(Dataset):
         mel_len = len(mel)
         if neg_sample:
             idx = random.randint(0, mel_len - syncnet_mel_step_size)
-            while start_idx == idx:
+            # while start_idx == idx:
+            # NOTE: make the negative samples at least 1 second far from current positive sample
+            while idx in list(range(start_idx - syncnet_mel_step_size, start_idx + syncnet_mel_step_size)):
                 idx = random.randint(0, mel_len - syncnet_mel_step_size)
             start_idx = idx
         end_idx = start_idx + syncnet_mel_step_size
