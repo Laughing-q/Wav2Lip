@@ -161,11 +161,11 @@ def train(
 ):
     nb = len(train_loader)  # number of batches
     for epoch in range(epochs):
+        model.train()
         running_loss = 0.0
         prog_bar = tqdm(enumerate(train_loader), total=len(train_loader))
         for i, (im, mel, y) in prog_bar:
             n = epoch * nb + i
-            model.train()
             optimizer.zero_grad()
 
             # Transform data to CUDA device
@@ -190,11 +190,11 @@ def train(
 
 
 def eval_model(val_loader, device, model):
+    model.eval()
     print("Evaluating...")
     losses = []
     pbar = tqdm(enumerate(val_loader), total=len(val_loader))
     for step, (im, mel, y) in pbar:
-        model.eval()
 
         # Transform data to CUDA device
         im = im.to(device).float() / 255.0
