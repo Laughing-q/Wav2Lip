@@ -254,7 +254,7 @@ def load_checkpoint(path, model, optimizer, reset_optimizer=False):
 
 
 if __name__ == "__main__":
-    checkpoint_dir = "runs/syncnet"
+    checkpoint_dir = "runs/syncnet_blur"
     checkpoint_path = None
 
     if not os.path.exists(checkpoint_dir):
