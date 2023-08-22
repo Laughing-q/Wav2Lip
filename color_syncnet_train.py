@@ -101,16 +101,21 @@ class SyncDataset(Dataset):
             end_idx = mel_len
         return mel[start_idx:end_idx, :]
 
-    def generate_window(self, p):
+    def generate_window(self, p, blur=False):
         window = []
-        frame_id = int(p.with_suffix("").name)
+        frame_id = int(p.stem)
         end_id = frame_id + window_size
         end_exist = (p.parent / f"{end_id}.jpg").exists()
         iterator = range(frame_id, end_id) if end_exist else range(frame_id - window_size, frame_id)
         frame_id = frame_id if end_exist else (frame_id - window_size)
+        if blur:
+            ksize = (random.choice([5, 7, 9, 11, 13, 15, 17, 19, 21]), 
+                     random.choice([5, 7, 9, 11, 13, 15, 17, 19, 21]))
         for fname in [str(p.parent / f"{i}.jpg") for i in iterator]:
             im = cv2.imread(fname)
             im = cv2.resize(im, (hparams.img_size, hparams.img_size))
+            if blur:
+                im = cv2.GaussianBlur(im, ksize, 0)
             window.append(im)
         return window, frame_id
 
@@ -122,7 +127,9 @@ class SyncDataset(Dataset):
         p = Path(im_file)
         akey = str(p.parent).replace("images", "audios")
         mel = self.audios[akey]
-        window, frame_id = self.generate_window(p)
+
+        blur = random.uniform(0, 1) < 0.5
+        window, frame_id = self.generate_window(p, blur=blur)
 
         neg_sample = random.uniform(0, 1) < 0.5
         mel_patch = self.crop_audio_window(mel.copy(), frame_id, neg_sample=neg_sample)

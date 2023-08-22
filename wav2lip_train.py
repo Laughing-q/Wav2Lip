@@ -137,16 +137,21 @@ class Wav2LipDataset(Dataset):
             end_idx = mel_len
         return mel[start_idx:end_idx, :]
 
-    def generate_window(self, p):
+    def generate_window(self, p, blur=False):
         window = []
         frame_id = int(p.stem)
         end_id = frame_id + window_size
         end_exist = (p.parent / f"{end_id}.jpg").exists()
         iterator = range(frame_id, end_id) if end_exist else range(frame_id - window_size, frame_id)
         frame_id = frame_id if end_exist else (frame_id - window_size)
+        if blur:
+            ksize = (random.choice([5, 7, 9, 11, 13, 15, 17, 19, 21]), 
+                     random.choice([5, 7, 9, 11, 13, 15, 17, 19, 21]))
         for fname in [str(p.parent / f"{i}.jpg") for i in iterator]:
             im = cv2.imread(fname)
             im = cv2.resize(im, (hparams.img_size, hparams.img_size))
+            if blur:
+                im = cv2.GaussianBlur(im, ksize, 0)
             window.append(im)
         return window, frame_id
 
@@ -178,14 +183,16 @@ class Wav2LipDataset(Dataset):
         id = str(p.parent)
         akey = id.replace("images", "audios")
         mel = self.audios[akey]
-        window, frame_id = self.generate_window(p)
+
+        blur = random.uniform(0, 1) < 0.5
+        window, frame_id = self.generate_window(p, blur=blur)
 
         wrong_frame_id = random.choice(range(*self.im_range[id]))
         wrong_im_file = p.parent / f"{wrong_frame_id}.jpg"
         while (wrong_frame_id == frame_id) or (not wrong_im_file.exists()):
             wrong_frame_id = random.choice(range(*self.im_range[id]))
             wrong_im_file = p.parent / f"{wrong_frame_id}.jpg"
-        wrong_window, wrong_frame_id = self.generate_window(wrong_im_file)
+        wrong_window, wrong_frame_id = self.generate_window(wrong_im_file, blur=blur)
 
         mel_patch = self.crop_audio_window(mel.copy(), frame_id)
         indiv_mels = self.get_segmented_mels(mel.copy(), frame_id)
