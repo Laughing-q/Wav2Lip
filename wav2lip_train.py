@@ -5,6 +5,7 @@ from contextlib import contextmanager
 from torch.utils.data import Dataset, DataLoader, distributed
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.distributed as dist
+import albumentations as A
 
 from models import SyncNet_color as SyncNet
 from models import Wav2Lip as Wav2Lip
@@ -95,6 +96,13 @@ class Wav2LipDataset(Dataset):
             # np.save(af.replace(".aac", ".npy"), mel)
             audios[str(Path(af).with_suffix(""))] = np.load(af)
         self.audios = audios
+        self.transforms = A.Compose(
+            [
+                A.Resize(hparams.img_size, hparams.img_size),
+                A.HorizontalFlip(p=1),
+                A.RandomBrightnessContrast(p=1),
+            ]
+        )
 
     def get_frame_id(self, im_file):
         return int(Path(im_file).stem)
@@ -103,23 +111,6 @@ class Wav2LipDataset(Dataset):
         wav = audio.load_wav(audio_file, hparams.sample_rate)
         mel = audio.melspectrogram(wav).T
         return mel
-
-    def read_window(self, window_fnames):
-        if window_fnames is None:
-            return None
-        window = []
-        for fname in window_fnames:
-            img = cv2.imread(fname)
-            if img is None:
-                return None
-            try:
-                img = cv2.resize(img, (hparams.img_size, hparams.img_size))
-            except Exception as e:
-                return None
-
-            window.append(img)
-
-        return window
 
     def crop_audio_window(self, mel, frame_id, neg_sample=False):
         start_idx = int(80.0 * (frame_id / float(hparams.fps)))
@@ -137,19 +128,23 @@ class Wav2LipDataset(Dataset):
             end_idx = mel_len
         return mel[start_idx:end_idx, :]
 
-    def generate_window(self, p, blur=False):
+    def generate_window(self, p, aug_rate):
         window = []
         frame_id = int(p.stem)
         end_id = frame_id + window_size
         end_exist = (p.parent / f"{end_id}.jpg").exists()
         iterator = range(frame_id, end_id) if end_exist else range(frame_id - window_size, frame_id)
         frame_id = frame_id if end_exist else (frame_id - window_size)
+        blur = aug_rate.pop(-1)
         if blur:
             ksize = (random.choice([5, 7, 9, 11, 13, 15, 17, 19, 21]), 
                      random.choice([5, 7, 9, 11, 13, 15, 17, 19, 21]))
         for fname in [str(p.parent / f"{i}.jpg") for i in iterator]:
             im = cv2.imread(fname)
-            im = cv2.resize(im, (hparams.img_size, hparams.img_size))
+            for t, ar in zip(self.transforms, aug_rate):
+                if not ar:
+                    continue
+                im = t(image=im)["image"]
             if blur:
                 im = cv2.GaussianBlur(im, ksize, 0)
             window.append(im)
@@ -184,15 +179,21 @@ class Wav2LipDataset(Dataset):
         akey = id.replace("images", "audios")
         mel = self.audios[akey]
 
-        blur = random.uniform(0, 1) < 0.5
-        window, frame_id = self.generate_window(p, blur=blur)
+        # make sure all the images in one group have the same augmentations.
+        aug_rate = [
+            True,
+            random.uniform(0, 1) < 0.5,
+            random.uniform(0, 1) < 0.5,
+            random.uniform(0, 1) < 0.5
+        ]
+        window, frame_id = self.generate_window(p, aug_rate)
 
         wrong_frame_id = random.choice(range(*self.im_range[id]))
         wrong_im_file = p.parent / f"{wrong_frame_id}.jpg"
         while (wrong_frame_id == frame_id) or (not wrong_im_file.exists()):
             wrong_frame_id = random.choice(range(*self.im_range[id]))
             wrong_im_file = p.parent / f"{wrong_frame_id}.jpg"
-        wrong_window, wrong_frame_id = self.generate_window(wrong_im_file, blur=blur)
+        wrong_window, wrong_frame_id = self.generate_window(wrong_im_file, aug_rate)
 
         mel_patch = self.crop_audio_window(mel.copy(), frame_id)
         indiv_mels = self.get_segmented_mels(mel.copy(), frame_id)
