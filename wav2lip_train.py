@@ -277,13 +277,12 @@ def train(
             g = model(indiv_mels, x)
 
             l1loss = recon_loss(g, gt)
+            running_l1_loss += l1loss.item()
             if RANK != -1:
                 l1loss *= WORLD_SIZE
 
             l1loss.backward()
             optimizer.step()
-
-            running_l1_loss += l1loss.item()
 
             if RANK in (0, -1):
                 prog_bar.set_description(
