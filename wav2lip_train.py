@@ -316,8 +316,8 @@ def train(
                     )
                 )
 
-            if i % 10000 == 0 and i != 0:
-                save_checkpoint(model, optimizer, n, checkpoint_dir, epoch)
+                if i % 10000 == 0 and i != 0:
+                    save_checkpoint(model, optimizer, n, checkpoint_dir, epoch)
 
         if RANK in (-1, 0):
             # save_sample_images(x, g, gt, epoch, checkpoint_dir)
