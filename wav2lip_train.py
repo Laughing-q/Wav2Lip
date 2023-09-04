@@ -232,16 +232,6 @@ def save_sample_images(x, g, gt, epoch, step, checkpoint_dir):
             cv2.imwrite("{}/{}_{}_{}.jpg".format(folder, step, batch_idx, t), c[t])
 
 
-logloss = nn.BCELoss()
-
-
-def cosine_loss(a, v, y):
-    d = nn.functional.cosine_similarity(a, v).clamp_(0, 1)
-    loss = logloss(d.unsqueeze(1), y)
-
-    return loss
-
-
 # NOTE: set devices
 # device = "0"
 # os.environ["CUDA_VISIBLE_DEVICES"] = device  # set environment variable
@@ -380,13 +370,6 @@ if __name__ == "__main__":
                 sum(p.numel() for p in model.parameters() if p.requires_grad)
             )
         )
-
-    load_checkpoint(
-        "runs/wav2lip_ddp-old/checkpoint_step000000000.pth",
-        model,
-        None,
-        reset_optimizer=True,
-    )
 
     if WORLD_SIZE > 1:
         model = DDP(model, device_ids=[RANK])
