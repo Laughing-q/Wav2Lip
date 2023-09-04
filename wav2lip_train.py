@@ -203,6 +203,7 @@ class Wav2LipDataset(Dataset):
         window[:, :, window.shape[2] // 2 :] = 0.0
 
         wrong_window = self.prepare_window(wrong_window)
+        wrong_window[:, :, 0:wrong_window.shape[2] // 2] = 0.0
         x = np.concatenate([window, wrong_window], axis=0)
 
         x = torch.from_numpy(x)
@@ -315,6 +316,9 @@ def train(
                     )
                 )
 
+            if i % 10000 == 0 and i != 0:
+                save_checkpoint(model, optimizer, n, checkpoint_dir, epoch)
+
         if RANK in (-1, 0):
             # save_sample_images(x, g, gt, epoch, checkpoint_dir)
             save_checkpoint(model, optimizer, n, checkpoint_dir, epoch)
@@ -368,7 +372,7 @@ def eval_model(val_loader, device, model, epoch):
 
 
 def save_checkpoint(model, optimizer, step, checkpoint_dir, epoch):
-    checkpoint_path = osp.join(checkpoint_dir, "checkpoint_step{:09d}.pth".format(epoch))
+    checkpoint_path = osp.join(checkpoint_dir, "checkpoint_step{:09d}.pth".format(step))
     optimizer_state = optimizer.state_dict() if hparams.save_optimizer_state else None
     torch.save(
         {
