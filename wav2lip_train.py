@@ -7,7 +7,6 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.distributed as dist
 import albumentations as A
 
-from models import SyncNet_color as SyncNet
 from models import Wav2Lip as Wav2Lip
 import audio
 
@@ -28,7 +27,7 @@ RANK = int(os.getenv("RANK", -1))
 WORLD_SIZE = int(os.getenv("WORLD_SIZE", 1))
 
 window_size = 5
-syncnet_mel_step_size = 16
+mel_step_size = 16
 
 
 @contextmanager
@@ -68,8 +67,10 @@ class Wav2LipDataset(Dataset):
             frame_files = glob(osp.join(id_dir, "*"))
             frame_ids = [self.get_frame_id(frame_file) for frame_file in frame_files]
             if sum(frame_ids) != sum(range(min(frame_ids), max(frame_ids) + 1)):
-                print("WARNING: The numbers of frames should be continuous, "
-                      f"but got discontinuous numbers, ignoring {id_dir}.")
+                print(
+                    "WARNING: The numbers of frames should be continuous, "
+                    f"but got discontinuous numbers, ignoring {id_dir}."
+                )
                 continue
             # NOTE: filter frames that frame id less than 2, for `self.get_segmented_mels`
             frame_files = [
@@ -116,15 +117,15 @@ class Wav2LipDataset(Dataset):
         start_idx = int(80.0 * (frame_id / float(hparams.fps)))
         mel_len = len(mel)
         if neg_sample:
-            idx = random.randint(0, mel_len - syncnet_mel_step_size)
+            idx = random.randint(0, mel_len - mel_step_size)
             while start_idx == idx:
-                idx = random.randint(0, mel_len - syncnet_mel_step_size)
+                idx = random.randint(0, mel_len - mel_step_size)
             start_idx = idx
-        end_idx = start_idx + syncnet_mel_step_size
+        end_idx = start_idx + mel_step_size
         # TODO
         # NOTE: handle the case that `end_idx` beyond the length of mel.
         if end_idx >= mel_len:
-            start_idx = mel_len - syncnet_mel_step_size
+            start_idx = mel_len - mel_step_size
             end_idx = mel_len
         return mel[start_idx:end_idx, :]
 
@@ -137,8 +138,10 @@ class Wav2LipDataset(Dataset):
         frame_id = frame_id if end_exist else (frame_id - window_size)
         blur = aug_rate.pop(-1)
         if blur:
-            ksize = (random.choice([5, 7, 9, 11, 13, 15, 17, 19, 21]), 
-                     random.choice([5, 7, 9, 11, 13, 15, 17, 19, 21]))
+            ksize = (
+                random.choice([5, 7, 9, 11, 13, 15, 17, 19, 21]),
+                random.choice([5, 7, 9, 11, 13, 15, 17, 19, 21]),
+            )
         for fname in [str(p.parent / f"{i}.jpg") for i in iterator]:
             im = cv2.imread(fname)
             for t, ar in zip(self.transforms, aug_rate):
@@ -184,7 +187,7 @@ class Wav2LipDataset(Dataset):
             True,
             random.uniform(0, 1) < 0.5,
             random.uniform(0, 1) < 0.5,
-            random.uniform(0, 1) < 0.5
+            random.uniform(0, 1) < 0.5,
         ]
         window, frame_id = self.generate_window(p, aug_rate)
 
@@ -203,7 +206,7 @@ class Wav2LipDataset(Dataset):
         window[:, :, window.shape[2] // 2 :] = 0.0
 
         wrong_window = self.prepare_window(wrong_window)
-        wrong_window[:, :, 0:wrong_window.shape[2] // 2] = 0.0
+        wrong_window[:, :, 0 : wrong_window.shape[2] // 2] = 0.0
         x = np.concatenate([window, wrong_window], axis=0)
 
         x = torch.from_numpy(x)
@@ -252,15 +255,6 @@ if LOCAL_RANK != -1:
 recon_loss = nn.L1Loss()
 
 
-def get_sync_loss(mel, g):
-    g = g[:, :, :, g.size(3) // 2 :]
-    g = torch.cat([g[:, :, i] for i in range(window_size)], dim=1)
-    # B, 3 * T, H//2, W
-    a, v = syncnet(mel, g)
-    y = torch.ones(g.size(0), 1).float().to(device)
-    return cosine_loss(a, v, y)
-
-
 def train(
     device,
     model,
@@ -273,11 +267,8 @@ def train(
     nb = len(train_loader)  # number of batches
     for epoch in range(epochs):
         model.train()
-        if epoch == 20:
-            # without image GAN a lesser weight is sufficient
-            hparams.set_hparam("syncnet_wt", 0.01)
 
-        running_sync_loss, running_l1_loss = 0.0, 0.0
+        running_l1_loss = 0.0
         prog_bar = enumerate(train_loader)
         if RANK in (-1, 0):
             prog_bar = tqdm(enumerate(train_loader), total=len(train_loader))
@@ -293,27 +284,18 @@ def train(
 
             g = model(indiv_mels, x)
 
-            sync_loss = get_sync_loss(mel, g) if hparams.syncnet_wt > 0.0 else 0.0
             l1loss = recon_loss(g, gt)
             if RANK != -1:
-                sync_loss *= WORLD_SIZE
                 l1loss *= WORLD_SIZE
 
-            loss = hparams.syncnet_wt * sync_loss + (1 - hparams.syncnet_wt) * l1loss
-            loss.backward()
+            l1loss.backward()
             optimizer.step()
 
             running_l1_loss += l1loss.item()
-            if hparams.syncnet_wt > 0.0:
-                running_sync_loss += sync_loss.item()
-            else:
-                running_sync_loss += 0.0
 
             if RANK in (0, -1):
                 prog_bar.set_description(
-                    "Epoch: {}, L1: {}, Sync Loss: {}".format(
-                        epoch, running_l1_loss / (i + 1), running_sync_loss / (i + 1)
-                    )
+                    "Epoch: {}, L1: {}".format(epoch, running_l1_loss / (i + 1))
                 )
 
                 if i % 10000 == 0 and i != 0:
@@ -323,23 +305,12 @@ def train(
             # save_sample_images(x, g, gt, epoch, checkpoint_dir)
             save_checkpoint(model, optimizer, n, checkpoint_dir, epoch)
             with torch.no_grad():
-                average_sync_loss = eval_model(val_loader, device, model, epoch)
-
-            # if average_sync_loss < 0.75:
-            #     # without image GAN a lesser weight is sufficient
-            #     hparams.set_hparam("syncnet_wt", 0.01)
-        # NOTE: This barrier() here gets stuck while DDP training
-        # dist.barrier()
-        # dist.broadcast(average_sync_loss, src=0)
-        # NOTE: scatter `syncnet_wt` to other machines.
-        # out_syncnet_wt = [0.0]   # it has to be a list object.
-        # dist.scatter_object_list(out_syncnet_wt, [hparams.syncnet_wt for _ in range(WORLD_SIZE)], src=0)
-        # hparams.set_hparam("syncnet_wt", out_syncnet_wt[0])
+                eval_model(val_loader, device, model, epoch)
 
 
 def eval_model(val_loader, device, model, epoch):
     eval_steps = 700
-    sync_losses, recon_losses = [], []
+    recon_losses = []
     step = 0
     pbar = tqdm(val_loader, total=len(val_loader))
     model.eval()
@@ -352,10 +323,8 @@ def eval_model(val_loader, device, model, epoch):
 
         g = model(indiv_mels, x)
 
-        sync_loss = get_sync_loss(mel, g)
         l1loss = recon_loss(g, gt)
 
-        sync_losses.append(sync_loss.item())
         recon_losses.append(l1loss.item())
         pbar.set_description("Evaluating for {} steps".format(eval_steps))
 
@@ -363,12 +332,9 @@ def eval_model(val_loader, device, model, epoch):
         if step > eval_steps:
             save_sample_images(x, g, gt, epoch, step, checkpoint_dir)
             break
-    averaged_sync_loss = sum(sync_losses) / len(sync_losses)
     averaged_recon_loss = sum(recon_losses) / len(recon_losses)
 
-    print("L1: {}, Sync loss: {}".format(averaged_recon_loss, averaged_sync_loss))
-
-    return averaged_sync_loss
+    print("L1: {}".format(averaged_recon_loss))
 
 
 def save_checkpoint(model, optimizer, step, checkpoint_dir, epoch):
@@ -405,7 +371,6 @@ def load_checkpoint(path, model, optimizer, reset_optimizer=False):
 if __name__ == "__main__":
     checkpoint_dir = "runs/wav2lip_ddp"
     checkpoint_path = None
-    syncnet_checkpoint_path = "runs/syncnet/checkpoint_step000000006.pth"
 
     # Model
     model = Wav2Lip().to(device)
@@ -443,24 +408,11 @@ if __name__ == "__main__":
     if checkpoint_path is not None:
         load_checkpoint(checkpoint_path, model, optimizer, reset_optimizer=False)
 
-    syncnet = SyncNet()
-    for p in syncnet.parameters():
-        p.requires_grad = False
-
-    load_checkpoint(
-        syncnet_checkpoint_path,
-        syncnet,
-        None,
-        reset_optimizer=True,
-    )
-    syncnet.to(device)
-    syncnet.eval()
-
     # Dataset and Dataloader setup
     with torch_distributed_zero_first(RANK):
         train_dataset = Wav2LipDataset(
-        im_dir="/sdata/datasets/audio/final/train/images",
-        audio_dir="/sdata/datasets/audio/final/train/audios",
+            im_dir="/sdata/datasets/audio/final/train/images",
+            audio_dir="/sdata/datasets/audio/final/train/audios",
         )
 
     sampler = None if RANK == -1 else distributed.DistributedSampler(train_dataset, shuffle=True)
@@ -479,12 +431,12 @@ if __name__ == "__main__":
             im_dir="/sdata/datasets/audio/final/val/images",
             audio_dir="/sdata/datasets/audio/final/val/audios",
         )
-        val_loader = DataLoader(val_dataset, batch_size=hparams.batch_size * 2, num_workers=4, shuffle=True)
+        val_loader = DataLoader(
+            val_dataset, batch_size=hparams.batch_size * 2, num_workers=4, shuffle=True
+        )
 
     os.makedirs(checkpoint_dir, exist_ok=True)
 
-    # with torch.no_grad():
-    #     eval_model(val_loader, device, model, 0)
     # Train!
     train(
         device,
