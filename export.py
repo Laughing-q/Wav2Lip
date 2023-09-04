@@ -60,12 +60,15 @@ def load_model(path):
 
 if __name__ == "__main__":
     # model = load_model("checkpoints/wav2lip.pth")
-    # model = Wav2Lip()
-    # model.eval()
-    # torch2Onnx(model)
-
-    image = torch.randn(1, 15, 128, 256, dtype=torch.float32)
-    audio = torch.randn(1, 1, 80, 16, dtype=torch.float32)
-    model = SyncNet()
+    model = Wav2Lip()
+    print(sum(p.numel() for p in model.face_encoder_blocks.parameters()))
+    print(sum(p.numel() for p in model.audio_encoder.parameters()))
+    print(sum(p.numel() for p in model.face_decoder_blocks.parameters()))
     model.eval()
-    model(audio, image)
+    torch2Onnx(model)
+
+    # image = torch.randn(1, 15, 128, 256, dtype=torch.float32)
+    # audio = torch.randn(1, 1, 80, 16, dtype=torch.float32)
+    # model = SyncNet()
+    # model.eval()
+    # model(audio, image)
