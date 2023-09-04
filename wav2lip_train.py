@@ -360,7 +360,7 @@ def load_checkpoint(path, model, optimizer, reset_optimizer=False):
 
 
 if __name__ == "__main__":
-    checkpoint_dir = "runs/wav2lip_ddp"
+    checkpoint_dir = "runs/wav2lip_ddp_swapped_bili_aug_nnewarch_down"
     checkpoint_path = None
 
     # Model
