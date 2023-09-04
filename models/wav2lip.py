@@ -21,29 +21,30 @@ class Wav2Lip(nn.Module):
                 nn.Sequential(
                     Conv2d(32, 64, kernel_size=3, stride=2, padding=1),  # 64
                     Conv2d(64, 64, kernel_size=3, stride=1, padding=1, residual=True),
-                    Conv2d(64, 64, kernel_size=3, stride=1, padding=1, residual=True),
-                    Conv2d(64, 64, kernel_size=3, stride=1, padding=1, residual=True),
+                    # Conv2d(64, 64, kernel_size=3, stride=1, padding=1, residual=True),
+                    # Conv2d(64, 64, kernel_size=3, stride=1, padding=1, residual=True),
                 ),
                 nn.Sequential(
                     Conv2d(64, 128, kernel_size=3, stride=2, padding=1),  # 32
                     Conv2d(128, 128, kernel_size=3, stride=1, padding=1, residual=True),
-                    Conv2d(128, 128, kernel_size=3, stride=1, padding=1, residual=True),
+                    # Conv2d(128, 128, kernel_size=3, stride=1, padding=1, residual=True),
                 ),
                 nn.Sequential(
                     Conv2d(128, 256, kernel_size=3, stride=2, padding=1),  # 16
-                    Conv2d(256, 256, kernel_size=3, stride=1, padding=1, residual=True),
+                    # Conv2d(256, 256, kernel_size=3, stride=1, padding=1, residual=True),
                     Conv2d(256, 256, kernel_size=3, stride=1, padding=1, residual=True),
                 ),
                 nn.Sequential(
-                    Conv2d(256, 512, kernel_size=3, stride=2, padding=1),  # 8
+                    Conv2d(256, 256, kernel_size=3, stride=2, padding=1),  # 8
+                    Conv2d(256, 256, kernel_size=3, stride=1, padding=1, residual=True),
+                ),
+                nn.Sequential(
+                    Conv2d(256, 512, kernel_size=3, stride=2, padding=1),  # 4
                     Conv2d(512, 512, kernel_size=3, stride=1, padding=1, residual=True),
                 ),
                 nn.Sequential(
-                    Conv2d(512, 512, kernel_size=3, stride=2, padding=1),  # 4
-                    Conv2d(512, 512, kernel_size=3, stride=1, padding=1, residual=True),
-                ),
-                nn.Sequential(
-                    Conv2d(512, 512, kernel_size=4, stride=1, padding=0),  # 1, 1
+                    nn.AdaptiveAvgPool2d(1),
+                    # Conv2d(512, 512, kernel_size=4, stride=1, padding=0),  # 1, 1
                     Conv2d(512, 512, kernel_size=1, stride=1, padding=0),
                 ),
             ]
@@ -62,6 +63,7 @@ class Wav2Lip(nn.Module):
             Conv2d(128, 256, kernel_size=3, stride=(3, 2), padding=1),
             Conv2d(256, 256, kernel_size=3, stride=1, padding=1, residual=True),
             Conv2d(256, 512, kernel_size=3, stride=1, padding=0),
+            Conv2d(512, 512, kernel_size=1, stride=1, padding=0, residual=True),
             Conv2d(512, 512, kernel_size=1, stride=1, padding=0),
         )
 
@@ -82,7 +84,7 @@ class Wav2Lip(nn.Module):
                 ), # 8, 8
                 nn.Sequential(
                     Conv2dTranspose(
-                        1024, 512, kernel_size=3, stride=2, padding=1, output_padding=1
+                        768, 512, kernel_size=3, stride=2, padding=1, output_padding=1
                     ),
                     Conv2d(512, 512, kernel_size=3, stride=1, padding=1, residual=True),
                     Conv2d(512, 512, kernel_size=3, stride=1, padding=1, residual=True),
