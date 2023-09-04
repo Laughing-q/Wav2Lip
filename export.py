@@ -64,8 +64,13 @@ if __name__ == "__main__":
     print(sum(p.numel() for p in model.face_encoder_blocks.parameters()))
     print(sum(p.numel() for p in model.audio_encoder.parameters()))
     print(sum(p.numel() for p in model.face_decoder_blocks.parameters()))
-    model.eval()
-    torch2Onnx(model)
+    from faceswap.modules.lip_sync import Wav2Lip96
+    model = Wav2Lip96()
+    print(sum(p.numel() for p in model.face_encoder_blocks.parameters()))
+    print(sum(p.numel() for p in model.audio_encoder.parameters()))
+    print(sum(p.numel() for p in model.face_decoder_blocks.parameters()))
+    # model.eval()
+    # torch2Onnx(model)
 
     # image = torch.randn(1, 15, 128, 256, dtype=torch.float32)
     # audio = torch.randn(1, 1, 80, 16, dtype=torch.float32)
