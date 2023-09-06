@@ -208,7 +208,6 @@ class Wav2LipDataset(Dataset):
         window[:, :, window.shape[2] // 2 :] = 0.0
 
         wrong_window = self.prepare_window(wrong_window)
-        wrong_window[:, :, 0 : wrong_window.shape[2] // 2] = 0.0
         x = np.concatenate([window, wrong_window], axis=0)
 
         x = torch.from_numpy(x)
