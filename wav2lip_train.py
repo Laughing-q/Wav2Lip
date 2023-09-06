@@ -186,11 +186,10 @@ class Wav2LipDataset(Dataset):
             random.uniform(0, 1) < 0.5,
             random.uniform(0, 1) < 0.5,
         ]
-        if aug_rate[-1]:
-            ksize = (
-                random.choice([5, 7, 9, 11, 13, 15, 17, 19, 21]),
-                random.choice([5, 7, 9, 11, 13, 15, 17, 19, 21]),
-            )
+        ksize = (
+            random.choice([5, 7, 9, 11, 13, 15, 17, 19, 21]),
+            random.choice([5, 7, 9, 11, 13, 15, 17, 19, 21]),
+        )
         window, frame_id = self.generate_window(p, aug_rate, ksize)
 
         wrong_frame_id = random.choice(range(*self.im_range[id]))
